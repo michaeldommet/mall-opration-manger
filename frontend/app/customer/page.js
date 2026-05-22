@@ -69,6 +69,57 @@ export default function CustomerCockpit() {
     "Parking A": { top: "85%", left: "45%" }
   };
 
+  const mallHappenings = [
+    {
+      id: "happening-1",
+      type: "event",
+      badge: "🎨 Art & Craft",
+      title: "Spring Artisan Market",
+      desc: "Local crafts, handmade jewelry, and organic food stalls in the Central Atrium.",
+      time: "Today, 10:00 AM - 8:00 PM",
+      location: "📍 Central Atrium (Floor 1)",
+      store: "Café Bloom",
+      actionLabel: "🧭 Route to Atrium",
+      prompt: "Plan a walking itinerary starting from Entrance A to Café Bloom to visit the Spring Artisan Market in the Central Atrium"
+    },
+    {
+      id: "happening-2",
+      type: "promo",
+      badge: "⚡ Flash Promo",
+      title: "Café Bloom: Pastry Happy Hour",
+      desc: "Get an exclusive free organic pastry with any Large Latte purchase.",
+      time: "1:00 PM - 4:00 PM Daily",
+      location: "📍 Food Court (Floor 1)",
+      store: "Café Bloom",
+      actionLabel: "🎟️ Claim BOGO Pastry",
+      prompt: "Activate customer coupon for Store: **Café Bloom** and Discount: **Free Pastry w/ Large Latte**"
+    },
+    {
+      id: "happening-3",
+      type: "music",
+      badge: "🎷 Live Music",
+      title: "Sunset Jazz Concert",
+      desc: "Enjoy smooth contemporary jazz tunes while dining at the Food Court.",
+      time: "Tonight, 6:00 PM - 9:00 PM",
+      location: "📍 Food Court (Floor 1)",
+      store: "Sushi Express",
+      actionLabel: "🧭 Plan Dinner Route",
+      prompt: "Plan a 90-minute dining stop at Sushi Express including the BOGO Roll deal while enjoying the Sunset Jazz Concert"
+    },
+    {
+      id: "happening-4",
+      type: "promo",
+      badge: "🎁 Seasonal Sale",
+      title: "SneakerVault Retro Weekend",
+      desc: "Get an exclusive 20% off all vintage and retro sneakers releases.",
+      time: "This Friday - Sunday",
+      location: "📍 East-Wing (Floor 1)",
+      store: "SneakerVault",
+      actionLabel: "👟 View Retro Deals",
+      prompt: "Check SneakerVault deals, activate coupon, and plan a shopping stop"
+    }
+  ];
+
   useEffect(() => {
     const fetchStores = async () => {
       try {
@@ -701,7 +752,7 @@ export default function CustomerCockpit() {
         }
 
         .kiosk-map-card {
-          flex: 1;
+          flex: 1.8;
           background: var(--panel-bg);
           border: var(--panel-border);
           border-radius: 28px;
@@ -910,7 +961,7 @@ export default function CustomerCockpit() {
         .kiosk-split-panels {
           display: flex;
           gap: 20px;
-          flex: 1.5;
+          flex: 2.2;
           min-height: 0;
         }
         .kiosk-info-panel {
@@ -920,12 +971,13 @@ export default function CustomerCockpit() {
           -webkit-backdrop-filter: blur(25px);
           border: var(--panel-border);
           border-radius: 24px;
-          padding: 16px;
+          padding: 18px;
           overflow-y: auto;
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 12px;
           min-height: 0;
+          scrollbar-gutter: stable;
         }
         .kiosk-info-panel::-webkit-scrollbar {
           width: 4px;
@@ -953,6 +1005,142 @@ export default function CustomerCockpit() {
         .kiosk-store-list-item.selected {
           background: rgba(59, 130, 246, 0.1);
           border-color: rgba(59, 130, 246, 0.35);
+        }
+
+        .kiosk-happenings-panel {
+          flex: 1;
+          background: var(--panel-bg);
+          backdrop-filter: blur(25px);
+          -webkit-backdrop-filter: blur(25px);
+          border: var(--panel-border);
+          border-radius: 24px;
+          padding: 18px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          min-height: 0;
+          scrollbar-gutter: stable;
+        }
+        .kiosk-happenings-panel::-webkit-scrollbar {
+          width: 4px;
+        }
+        .kiosk-happenings-panel::-webkit-scrollbar-thumb {
+          background: rgba(15, 23, 42, 0.1);
+          border-radius: 2px;
+        }
+        
+        .happenings-title {
+          font-size: 0.95rem;
+          font-weight: 800;
+          color: #047857; /* Emerald/Green theme for active promos */
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        
+        .happenings-list-container {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        
+        .happening-card {
+          background: rgba(255, 255, 255, 0.45);
+          border: 1px solid rgba(15, 23, 42, 0.05);
+          border-radius: 16px;
+          padding: 12px 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          cursor: pointer;
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
+        }
+        
+        .happening-card:hover {
+          transform: translateY(-2px);
+          background: rgba(255, 255, 255, 0.85);
+          border-color: rgba(16, 185, 129, 0.25);
+          box-shadow: 0 8px 24px rgba(16, 185, 129, 0.08);
+        }
+        
+        .happening-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        
+        .happening-type-badge {
+          font-size: 0.58rem;
+          font-weight: 800;
+          padding: 2px 8px;
+          border-radius: 20px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        
+        .happening-type-badge.event {
+          background: rgba(59, 130, 246, 0.1);
+          color: #1d4ed8;
+          border: 1px solid rgba(59, 130, 246, 0.15);
+        }
+        
+        .happening-type-badge.promo {
+          background: rgba(245, 158, 11, 0.1);
+          color: #b45309;
+          border: 1px solid rgba(245, 158, 11, 0.15);
+        }
+        
+        .happening-type-badge.music {
+          background: rgba(139, 92, 246, 0.1);
+          color: #6d28d9;
+          border: 1px solid rgba(139, 92, 246, 0.15);
+        }
+        
+        .happening-title-text {
+          font-size: 0.82rem;
+          font-weight: 800;
+          color: var(--text-primary);
+        }
+        
+        .happening-desc {
+          font-size: 0.68rem;
+          color: var(--text-secondary);
+          line-height: 1.35;
+        }
+        
+        .happening-meta {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 0.62rem;
+          color: var(--text-muted);
+          font-weight: 600;
+          border-top: 1px dashed rgba(15, 23, 42, 0.05);
+          padding-top: 8px;
+          margin-top: 2px;
+        }
+        
+        .happening-btn {
+          align-self: flex-start;
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          color: #ffffff;
+          border: none;
+          border-radius: 8px;
+          padding: 4px 10px;
+          font-size: 0.62rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          box-shadow: 0 2px 6px rgba(16, 185, 129, 0.2);
+        }
+        
+        .happening-btn:hover {
+          opacity: 0.9;
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
         }
 
 
@@ -1787,203 +1975,255 @@ export default function CustomerCockpit() {
             </div>
           </div>
 
-          <div className="kiosk-directory-card">
-            <span className="directory-title">🏢 Mall Interactive Touch Directory</span>
-            <div className="floor-filters-row" style={{ marginTop: "6px" }}>
-              {["all", "3", "2", "1", "0", "-1"].map((fl) => (
-                <button 
-                  key={fl} 
-                  className={`floor-filter-btn ${selectedFloorFilter === fl ? "active" : ""}`} 
-                  onClick={() => setSelectedFloorFilter(fl)}
-                >
-                  {fl === "all" ? "🏢 All Floors" : `Floor ${fl}`}
-                </button>
-              ))}
-            </div>
-            {/* Widescreen Glassmorphic Search Bar */}
-            <div className="directory-search-row" style={{ position: "relative", marginTop: "10px" }}>
-              <input 
-                type="text" 
-                className="directory-search-input" 
-                placeholder="🔍 Search stores, dining, categories (e.g. shoes, sushi, salon, parking)..."
-                value={storeSearchQuery}
-                onChange={(e) => setStoreSearchQuery(e.target.value)}
-                style={{
-                  width: "100%",
-                  background: "rgba(255, 255, 255, 0.9)",
-                  border: "1px solid rgba(15, 23, 42, 0.15)",
-                  borderRadius: "12px",
-                  padding: "10px 14px 10px 38px",
-                  color: "#0f172a",
-                  fontSize: "0.82rem",
-                  outline: "none",
-                  transition: "all 0.2s ease"
-                }}
-              />
-              <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "0.85rem" }}>🔍</span>
-              {storeSearchQuery && (
-                <button 
-                  onClick={() => setStoreSearchQuery("")}
-                  style={{
-                    position: "absolute",
-                    right: "12px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    background: "transparent",
-                    border: "none",
-                    color: "#64748b",
-                    cursor: "pointer",
-                    fontSize: "0.85rem"
-                  }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          </div>
-
           <div className="kiosk-split-panels">
-            {/* Interactive Touch Directory list / details split */}
+            {/* Left Column: Unified Interactive Touch Directory */}
             <div className="kiosk-info-panel">
-              {selectedKioskStore ? (
-                <div className="kiosk-selected-store-detail" style={{ position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+              <span className="directory-title" style={{ fontSize: "0.95rem", fontWeight: "800", color: "#1d4ed8", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                🏢 Mall Interactive Touch Directory
+              </span>
+              
+              <div className="floor-filters-row" style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "4px" }}>
+                {["all", "3", "2", "1", "0", "-1"].map((fl) => (
                   <button 
-                    onClick={() => setSelectedKioskStore(null)}
+                    key={fl} 
+                    className={`floor-filter-btn ${selectedFloorFilter === fl ? "active" : ""}`} 
+                    onClick={() => setSelectedFloorFilter(fl)}
+                  >
+                    {fl === "all" ? "🏢 All Floors" : `Floor ${fl}`}
+                  </button>
+                ))}
+              </div>
+              
+              {/* Widescreen Glassmorphic Search Bar */}
+              <div className="directory-search-row" style={{ position: "relative", marginTop: "4px" }}>
+                <input 
+                  type="text" 
+                  className="directory-search-input" 
+                  placeholder="🔍 Search stores, dining, categories (e.g. shoes, sushi, salon, parking)..."
+                  value={storeSearchQuery}
+                  onChange={(e) => setStoreSearchQuery(e.target.value)}
+                  style={{
+                    width: "100%",
+                    background: "rgba(255, 255, 255, 0.9)",
+                    border: "1px solid rgba(15, 23, 42, 0.15)",
+                    borderRadius: "12px",
+                    padding: "10px 14px 10px 38px",
+                    color: "#0f172a",
+                    fontSize: "0.82rem",
+                    outline: "none",
+                    transition: "all 0.2s ease"
+                  }}
+                />
+                <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "0.85rem" }}>🔍</span>
+                {storeSearchQuery && (
+                  <button 
+                    onClick={() => setStoreSearchQuery("")}
                     style={{
                       position: "absolute",
-                      right: "0",
-                      top: "0",
-                      background: "rgba(255,255,255,0.06)",
+                      right: "12px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "transparent",
                       border: "none",
-                      color: "#8c9bb3",
-                      borderRadius: "50%",
-                      width: "24px",
-                      height: "24px",
+                      color: "#64748b",
                       cursor: "pointer",
-                      fontSize: "0.75rem",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      transition: "all 0.2s ease"
+                      fontSize: "0.85rem"
                     }}
                   >
                     ✕
                   </button>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                    <span style={{ fontSize: "1.2rem" }}>{getActivityEmoji(selectedKioskStore.name)}</span>
-                    <h3 style={{ fontSize: "1rem", fontWeight: "800", color: "#60a5fa" }}>{selectedKioskStore.name}</h3>
-                    <span className="floor-badge floor-1" style={{ fontSize: "0.6rem", padding: "2px 6px" }}>
-                      {selectedKioskStore.floor}
-                    </span>
-                  </div>
-                  <p style={{ fontSize: "0.75rem", color: "#8c9bb3", marginBottom: "10px", lineHeight: "1.35" }}>
-                    {selectedKioskStore.desc}
-                  </p>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <button
-                      onClick={() => {
-                        const pathPrompt = `Plan a walking route starting from Entrance A to visit ${selectedKioskStore.name}. Format the itinerary in a beautiful timetable schedule.`;
-                        setPrompt(pathPrompt);
-                        executeChatStream(pathPrompt);
-                      }}
+                )}
+              </div>
+
+              {/* Scrollable Listings or Details */}
+              <div style={{ flex: 1, minHeight: 0, marginTop: "8px", display: "flex", flexDirection: "column" }}>
+                {selectedKioskStore ? (
+                  <div className="kiosk-selected-store-detail" style={{ position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                    <button 
+                      onClick={() => setSelectedKioskStore(null)}
                       style={{
-                        background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+                        position: "absolute",
+                        right: "0",
+                        top: "0",
+                        background: "rgba(0,0,0,0.05)",
                         border: "none",
-                        borderRadius: "8px",
-                        color: "#ffffff",
-                        padding: "6px 14px",
-                        fontSize: "0.7rem",
-                        fontWeight: "700",
+                        color: "var(--text-secondary)",
+                        borderRadius: "50%",
+                        width: "24px",
+                        height: "24px",
                         cursor: "pointer",
-                        boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)",
+                        fontSize: "0.75rem",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                         transition: "all 0.2s ease"
                       }}
                     >
-                      🧭 Route From Entrance A
+                      ✕
                     </button>
-                    {(() => {
-                      const promo = featuredPromotions.find(p => p.store.toLowerCase() === selectedKioskStore.name.toLowerCase());
-                      return promo ? (
-                        <button
-                          onClick={() => {
-                            const actPrompt = `Activate customer coupon for Store: **${promo.store}** and Discount: **${promo.discount}**`;
-                            setPrompt(actPrompt);
-                            executeChatStream(actPrompt);
-                          }}
-                          style={{
-                            background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                            border: "none",
-                            borderRadius: "8px",
-                            color: "#ffffff",
-                            padding: "6px 14px",
-                            fontSize: "0.7rem",
-                            fontWeight: "700",
-                            cursor: "pointer",
-                            boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
-                            transition: "all 0.2s ease"
-                          }}
-                        >
-                          🎟️ Claim Coupon
-                        </button>
-                      ) : null;
-                    })()}
-                    <span style={{ fontSize: "0.68rem", color: "#10b981", fontWeight: "700", textTransform: "uppercase" }}>
-                      📍 Zone: {selectedKioskStore.zone}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                      <span style={{ fontSize: "1.2rem" }}>{getActivityEmoji(selectedKioskStore.name)}</span>
+                      <h3 style={{ fontSize: "1rem", fontWeight: "800", color: "#1d4ed8" }}>{selectedKioskStore.name}</h3>
+                      <span className="floor-badge floor-1" style={{ fontSize: "0.6rem", padding: "2px 6px" }}>
+                        {selectedKioskStore.floor}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "10px", lineHeight: "1.35" }}>
+                      {selectedKioskStore.desc}
+                    </p>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <button
+                        onClick={() => {
+                          const pathPrompt = `Plan a walking route starting from Entrance A to visit ${selectedKioskStore.name}. Format the itinerary in a beautiful timetable schedule.`;
+                          setPrompt(pathPrompt);
+                          executeChatStream(pathPrompt);
+                        }}
+                        style={{
+                          background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+                          border: "none",
+                          borderRadius: "8px",
+                          color: "#ffffff",
+                          padding: "6px 14px",
+                          fontSize: "0.7rem",
+                          fontWeight: "700",
+                          cursor: "pointer",
+                          boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)",
+                          transition: "all 0.2s ease"
+                        }}
+                      >
+                        🧭 Route From Entrance A
+                      </button>
+                      {(() => {
+                        const promo = featuredPromotions.find(p => p.store.toLowerCase() === selectedKioskStore.name.toLowerCase());
+                        return promo ? (
+                          <button
+                            onClick={() => {
+                              const actPrompt = `Activate customer coupon for Store: **${promo.store}** and Discount: **${promo.discount}**`;
+                              setPrompt(actPrompt);
+                              executeChatStream(actPrompt);
+                            }}
+                            style={{
+                              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                              border: "none",
+                              borderRadius: "8px",
+                              color: "#ffffff",
+                              padding: "6px 14px",
+                              fontSize: "0.7rem",
+                              fontWeight: "700",
+                              cursor: "pointer",
+                              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
+                              transition: "all 0.2s ease"
+                            }}
+                          >
+                            🎟️ Claim Coupon
+                          </button>
+                        ) : null;
+                      })()}
+                      <span style={{ fontSize: "0.68rem", color: "#10b981", fontWeight: "700", textTransform: "uppercase" }}>
+                        📍 Zone: {selectedKioskStore.zone}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <div style={{ fontSize: "0.75rem", fontWeight: "800", color: "var(--text-secondary)", textTransform: "uppercase", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>🏬 Tenants & Directory ({filteredStores.length})</span>
-                    {selectedFloorFilter !== "all" && <span style={{ color: "#3b82f6", marginLeft: "auto" }}>Filter: Floor {selectedFloorFilter}</span>}
-                  </div>
-                  <div className="kiosk-stores-scroll-container" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                    {filteredStores.length > 0 ? (
-                      filteredStores.map((store) => (
-                        <div 
-                          key={store.name} 
-                          className={`kiosk-store-list-item ${selectedKioskStore?.name === store.name ? "selected" : ""}`}
-                          onClick={() => setSelectedKioskStore(store)}
-                        >
-                          <div style={{ display: "flex", flexDirection: "column", gap: "2px", alignItems: "flex-start" }}>
-                            <span style={{ fontSize: "0.78rem", fontWeight: "700", color: "var(--text-primary)" }}>
-                              {getActivityEmoji(store.name)} {store.name}
-                            </span>
-                            {store.deal && (
-                              <span style={{
-                                fontSize: "0.6rem",
-                                fontWeight: "600",
-                                color: "#b45309",
-                                background: "rgba(245, 158, 11, 0.15)",
-                                border: "1px dashed rgba(245, 158, 11, 0.4)",
-                                borderRadius: "4px",
-                                padding: "1px 6px",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "2px",
-                                marginTop: "2px"
-                              }}>
-                                🏷️ {store.deal}
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", height: "100%", overflowY: "auto" }}>
+                    <div style={{ fontSize: "0.75rem", fontWeight: "800", color: "var(--text-secondary)", textTransform: "uppercase", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>🏬 Tenants & Directory ({filteredStores.length})</span>
+                      {selectedFloorFilter !== "all" && <span style={{ color: "#3b82f6", marginLeft: "auto" }}>Filter: Floor {selectedFloorFilter}</span>}
+                    </div>
+                    <div className="kiosk-stores-scroll-container" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {filteredStores.length > 0 ? (
+                        filteredStores.map((store) => (
+                          <div 
+                            key={store.name} 
+                            className={`kiosk-store-list-item ${selectedKioskStore?.name === store.name ? "selected" : ""}`}
+                            onClick={() => setSelectedKioskStore(store)}
+                          >
+                            <div style={{ display: "flex", flexDirection: "column", gap: "2px", alignItems: "flex-start" }}>
+                              <span style={{ fontSize: "0.78rem", fontWeight: "700", color: "var(--text-primary)" }}>
+                                {getActivityEmoji(store.name)} {store.name}
                               </span>
-                            )}
+                              {store.deal && (
+                                <span style={{
+                                  fontSize: "0.6rem",
+                                  fontWeight: "600",
+                                  color: "#b45309",
+                                  background: "rgba(245, 158, 11, 0.15)",
+                                  border: "1px dashed rgba(245, 158, 11, 0.4)",
+                                  borderRadius: "4px",
+                                  padding: "1px 6px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "2px",
+                                  marginTop: "2px"
+                                }}>
+                                  🏷️ {store.deal}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                              <span className="floor-badge floor-1" style={{ fontSize: "0.55rem", padding: "1px 4px" }}>
+                                {store.floor}
+                              </span>
+                              <span style={{ fontSize: "0.62rem", color: "var(--text-secondary)", fontFamily: "monospace" }}>{store.zone}</span>
+                            </div>
                           </div>
-                          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                            <span className="floor-badge floor-1" style={{ fontSize: "0.55rem", padding: "1px 4px" }}>
-                              {store.floor}
-                            </span>
-                            <span style={{ fontSize: "0.62rem", color: "var(--text-secondary)", fontFamily: "monospace" }}>{store.zone}</span>
-                          </div>
+                        ))
+                      ) : (
+                        <div style={{ padding: "20px 0", textAlign: "center", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                          No stores match your search or filter level.
                         </div>
-                      ))
-                    ) : (
-                      <div style={{ padding: "20px 0", textAlign: "center", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                        No stores match your search or filter level.
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Happenings & Offers */}
+            <div className="kiosk-happenings-panel">
+              <span className="happenings-title">
+                🎉 Live Happenings & Deals
+              </span>
+              <div className="happenings-list-container" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {mallHappenings.map((happening) => (
+                  <div 
+                    key={happening.id} 
+                    className="happening-card"
+                    onClick={() => {
+                      const storeObj = storesList.find(s => s.name === happening.store);
+                      if (storeObj) setSelectedKioskStore(storeObj);
+                    }}
+                  >
+                    <div className="happening-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span className={`happening-type-badge ${happening.type}`}>
+                        {happening.badge}
+                      </span>
+                      <span style={{ fontSize: "0.58rem", color: "var(--text-muted)", fontWeight: "600" }}>
+                        {happening.time}
+                      </span>
+                    </div>
+                    <div className="happening-title-text" style={{ fontSize: "0.82rem", fontWeight: "800", color: "var(--text-primary)" }}>
+                      {happening.title}
+                    </div>
+                    <p className="happening-desc" style={{ fontSize: "0.68rem", color: "var(--text-secondary)", lineHeight: "1.35", margin: 0 }}>
+                      {happening.desc}
+                    </p>
+                    <div className="happening-meta" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.62rem", color: "var(--text-muted)", fontWeight: "600", borderTop: "1px dashed rgba(15, 23, 42, 0.05)", paddingTop: "8px", marginTop: "2px" }}>
+                      <span>{happening.location}</span>
+                      <button 
+                        className="happening-btn"
+                        onClick={(e) => {
+                          e.stopPropagation(); // Avoid selecting the store when clicking the action button
+                          setPrompt(happening.prompt);
+                          executeChatStream(happening.prompt);
+                        }}
+                      >
+                        {happening.actionLabel}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
