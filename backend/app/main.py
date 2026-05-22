@@ -149,6 +149,234 @@ def get_stores():
         return {"stores": mock_stores}
 
 
+# Lazy-loaded embedding model to keep startup fast
+_transformer_model = None
+
+@app.get("/api/search")
+def hybrid_search(q: str = "", floor: str = None):
+    """
+    Performs multi-index hybrid search:
+    1. Lexical search on 'mall-directory' index matching name, category, description, keywords.
+    2. Dense vector semantic search on 'promotions-history' index using query embeddings.
+    3. Merges matching stores, boosts stores with matching deals, and returns unified results.
+    """
+    from backend.app.adk_agent.tools import _get_es_client
+    es = _get_es_client()
+    
+    q_clean = q.strip()
+    
+    mock_stores = [
+        {"name": "SneakerVault", "floor": "Floor 1", "zone": "EAST-WING", "category": "Apparel", "desc": "Premium sneaker boutique featuring retro releases."},
+        {"name": "Sushi Express", "floor": "Floor 1", "zone": "FOOD-COURT", "category": "Dining", "desc": "Fresh sushi rolls, sashimi, and classic Japanese dishes."},
+        {"name": "Café Bloom", "floor": "Floor 1", "zone": "FOOD-COURT", "category": "Dining", "desc": "Specialty coffee, organic teas, and freshly baked pastries."},
+        {"name": "TechZone", "floor": "Floor 2", "zone": "ELECTRONICS-WING", "category": "Electronics", "desc": "Latest smartphones, laptops, smart home tech, and accessories."},
+        {"name": "ByteShop", "floor": "Floor 2", "zone": "ELECTRONICS-WING", "category": "Electronics", "desc": "Expert computer components and high-performance gaming rigs."},
+        {"name": "StyleCraft", "floor": "Floor 1", "zone": "FASHION-DISTRICT", "category": "Apparel", "desc": "Custom tailored menswear and premium accessories."},
+        {"name": "FashionHub", "floor": "Floor 1", "zone": "FASHION-DISTRICT", "category": "Apparel", "desc": "Trendy streetwear and modern wardrobe essentials."},
+        {"name": "Urban Threads", "floor": "Floor 1", "zone": "EAST-WING", "category": "Apparel", "desc": "Eco-friendly fabrics and contemporary casualwear."},
+        {"name": "Pizza Palace", "floor": "Floor 1", "zone": "FOOD-COURT", "category": "Dining", "desc": "Gourmet wood-fired pizzas and fresh Italian pasta."},
+        {"name": "Burger Barn", "floor": "Floor 1", "zone": "FOOD-COURT", "category": "Dining", "desc": "Flame-grilled artisan burgers and hand-cut fries."},
+        {"name": "HomeStyle", "floor": "Floor 1", "zone": "WEST-WING", "category": "Apparel", "desc": "Modern home decor, textile accents, and furniture."},
+        {"name": "BookNook", "floor": "Floor 1", "zone": "WEST-WING", "category": "Apparel", "desc": "Curated novels, local literature, and cozy reading corners."},
+        {"name": "GlamCuts Salon", "floor": "Floor 3", "zone": "SERVICES-HUB", "category": "Services", "desc": "Full-service luxury hair styling and aesthetic treatments."},
+        {"name": "QuickFix Phones", "floor": "Floor 3", "zone": "SERVICES-HUB", "category": "Services", "desc": "Immediate screen repairs and battery diagnostics."},
+        {"name": "Entrance A", "floor": "Floor 0", "zone": "ENTRANCE-A", "category": "Transit", "desc": "East entrance portal situated on the ground level."},
+        {"name": "Entrance B", "floor": "Floor 0", "zone": "ENTRANCE-B", "category": "Transit", "desc": "West entrance portal situated on the ground level."},
+        {"name": "Entrance C", "floor": "Floor 0", "zone": "ENTRANCE-C", "category": "Transit", "desc": "North entrance portal situated on the ground level."},
+        {"name": "Parking A", "floor": "Floor -1", "zone": "PARKING-A", "category": "Transit", "desc": "Underground parking hub with EV charging stalls."}
+    ]
+
+    def normalize_name(name: str):
+        return "".join(c.lower() for c in name if c.isalnum())
+
+    def local_fallback():
+        results = []
+        for s in mock_stores:
+            # Filter by floor if requested
+            if floor and floor != "all":
+                target_floor = f"Floor {floor}"
+                if floor == "-1" and "parking" in s["floor"].lower():
+                    pass
+                elif s["floor"] != target_floor:
+                    continue
+            
+            # Filter by keyword if present
+            if q_clean:
+                q_lower = q_clean.lower()
+                if (q_lower in s["name"].lower() or 
+                    q_lower in s["category"].lower() or 
+                    q_lower in s["desc"].lower() or 
+                    q_lower in s["zone"].lower()):
+                    results.append(s)
+            else:
+                results.append(s)
+        return {"stores": results}
+
+    if not es:
+        return local_fallback()
+
+    try:
+        # 1. Fetch all store records from mall-directory for base metadata and local normalization
+        query_all = {
+            "query": {"match_all": {}},
+            "size": 100
+        }
+        res_all = es.search(index="mall-directory", body=query_all)
+        hits_all = res_all.get("hits", {}).get("hits", [])
+        
+        all_stores_list = []
+        for hit in hits_all:
+            source = hit["_source"]
+            all_stores_list.append({
+                "name": source.get("store_name", "Unknown Store"),
+                "floor": f"Floor {source.get('floor', 1)}",
+                "zone": source.get("zone", "east-wing").upper(),
+                "category": source.get("category", "General"),
+                "desc": source.get("description", source.get("keywords", "Premium store")),
+                "location": source.get("location", {})
+            })
+            
+        if not all_stores_list:
+            all_stores_list = mock_stores
+
+        # Build index mapping based on normalized names
+        store_map = {normalize_name(s["name"]): s for s in all_stores_list}
+
+        # If search query is empty, return all stores filtered by floor
+        if not q_clean:
+            results = []
+            for s in all_stores_list:
+                if floor and floor != "all":
+                    target_floor = f"Floor {floor}"
+                    if floor == "-1" and "parking" in s["floor"].lower():
+                        pass
+                    elif s["floor"] != target_floor:
+                        continue
+                results.append(s)
+            return {"stores": results}
+
+        # 2. Get embeddings and run semantic promotions query
+        global _transformer_model
+        if _transformer_model is None:
+            logger.info("Loading sentence-transformers/all-MiniLM-L6-v2 model for hybrid shopper search...")
+            from sentence_transformers import SentenceTransformer
+            _transformer_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+            
+        query_vector = _transformer_model.encode(q_clean).tolist()
+
+        # KNN search on promotions-history
+        semantic_body = {
+            "knn": {
+                "field": "copy_vector",
+                "query_vector": query_vector,
+                "k": 10,
+                "num_candidates": 50
+            },
+            "size": 10
+        }
+        res_sem = es.search(index="promotions-history", body=semantic_body)
+        sem_hits = res_sem.get("hits", {}).get("hits", [])
+
+        # Map semantic deals to store normalized names
+        promoted_deals = {}
+        for hit in sem_hits:
+            source = hit["_source"]
+            tenants = source.get("participating_tenants", [])
+            title = source.get("title", "")
+            score = hit["_score"]
+            
+            if isinstance(tenants, str):
+                tenants = [t.strip() for t in tenants.split(",") if t.strip()]
+            
+            for tenant in tenants:
+                tenant_normalized = normalize_name(tenant)
+                if tenant_normalized not in promoted_deals or score > promoted_deals[tenant_normalized]["score"]:
+                    promoted_deals[tenant_normalized] = {
+                        "title": title,
+                        "score": score
+                    }
+
+        # 3. Run lexical keyword query on mall-directory
+        lexical_must = [
+            {
+                "bool": {
+                    "should": [
+                        {"match": {"store_name": {"query": q_clean, "boost": 4.0}}},
+                        {"match": {"category": {"query": q_clean, "boost": 2.5}}},
+                        {"match": {"description": {"query": q_clean, "boost": 1.0}}},
+                        {"match": {"keywords": {"query": q_clean, "boost": 2.0}}}
+                    ]
+                }
+            }
+        ]
+        
+        lexical_body = {
+            "query": {
+                "bool": {
+                    "must": lexical_must
+                }
+            },
+            "size": 50
+        }
+        res_lex = es.search(index="mall-directory", body=lexical_body)
+        lex_hits = res_lex.get("hits", {}).get("hits", [])
+
+        # Map lexical search results
+        lexical_matches = {}
+        for hit in lex_hits:
+            name = hit["_source"].get("store_name", "")
+            lexical_matches[normalize_name(name)] = hit["_score"]
+
+        # 4. Merge and Score Fusion
+        merged_results = []
+        for norm_name, store in store_map.items():
+            # Apply floor filter
+            if floor and floor != "all":
+                target_floor = f"Floor {floor}"
+                if floor == "-1" and "parking" in store["floor"].lower():
+                    pass
+                elif store["floor"] != target_floor:
+                    continue
+
+            is_match = False
+            combined_score = 0.0
+            
+            # Check lexical match
+            if norm_name in lexical_matches:
+                is_match = True
+                combined_score += lexical_matches[norm_name]
+                
+            # Check semantic promotion deal match
+            deal_title = None
+            if norm_name in promoted_deals:
+                is_match = True
+                deal_title = promoted_deals[norm_name]["title"]
+                promo_score = promoted_deals[norm_name]["score"]
+                # Scale promo score to align with lexical scores
+                combined_score += (promo_score * 15.0)
+
+            if is_match:
+                store_res = store.copy()
+                store_res["deal"] = deal_title
+                store_res["score"] = combined_score
+                merged_results.append(store_res)
+
+        # Sort merged results by combined score descending
+        sorted_results = sorted(merged_results, key=lambda x: x["score"], reverse=True)
+        
+        # Strip internal score before returning
+        for s in sorted_results:
+            s.pop("score", None)
+
+        return {"stores": sorted_results}
+
+    except Exception as e:
+        logger.error(f"Error in backend hybrid search endpoint: {str(e)}")
+        return local_fallback()
+
+
+
+
 async def _stream_adk_events(user_message: str, role: str = "manager"):
     """
     Run the ADK agent and yield SSE-compatible JSON events matching the

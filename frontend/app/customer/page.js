@@ -22,6 +22,8 @@ export default function CustomerCockpit() {
   const [selectedFloorFilter, setSelectedFloorFilter] = useState("all");
   const [storeSearchQuery, setStoreSearchQuery] = useState("");
   const [selectedKioskStore, setSelectedKioskStore] = useState(null);
+  const [searchResults, setSearchResults] = useState(null);
+  const [isSearching, setIsSearching] = useState(false);
 
   const mallStores = [
     { name: "SneakerVault", floor: "Floor 1", zone: "EAST-WING", category: "Apparel", desc: "Premium sneaker boutique featuring retro releases." },
@@ -84,7 +86,38 @@ export default function CustomerCockpit() {
     fetchStores();
   }, []);
 
-  const filteredStores = storesList.filter((store) => {
+  // Live debounced search API integration with local fallback
+  useEffect(() => {
+    const q = storeSearchQuery.trim();
+    if (!q) {
+      setSearchResults(null);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const floorParam = selectedFloorFilter !== "all" ? selectedFloorFilter : "";
+        const url = `http://localhost:8000/api/search?q=${encodeURIComponent(q)}&floor=${floorParam}`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.stores) {
+            setSearchResults(data.stores);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch hybrid search results from backend", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [storeSearchQuery, selectedFloorFilter]);
+
+  // If live search results are active, display them; otherwise, compute locally from static or dynamically fetched storesList
+  const filteredStores = searchResults !== null ? searchResults : storesList.filter((store) => {
     const matchesFloor = selectedFloorFilter === "all" || 
                          store.floor === `Floor ${selectedFloorFilter}` || 
                          (selectedFloorFilter === "-1" && store.floor.toLowerCase().includes("parking"));
@@ -513,9 +546,15 @@ export default function CustomerCockpit() {
       {/* Dynamic Style Injection for modular layout */}
       <style dangerouslySetInnerHTML={{ __html: `
         .customer-view-container {
-          background-color: #030510;
-          background-image: radial-gradient(circle at 10% 20%, rgba(12, 18, 48, 0.9) 0%, rgba(3, 5, 16, 1) 90%),
-                            radial-gradient(circle at 90% 80%, rgba(17, 34, 76, 0.4) 0%, rgba(3, 5, 16, 0) 60%);
+          background-color: #f8fafc;
+          background-image: radial-gradient(circle at 10% 20%, rgba(219, 234, 254, 0.6) 0%, rgba(248, 250, 252, 1) 90%),
+                            radial-gradient(circle at 90% 80%, rgba(239, 246, 255, 0.5) 0%, rgba(248, 250, 252, 0) 60%);
+          --panel-bg: rgba(255, 255, 255, 0.7);
+          --panel-border: 1px solid rgba(15, 23, 42, 0.08);
+          --glass-shadow: 0 10px 30px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.02);
+          --text-primary: #0f172a;
+          --text-secondary: #475569;
+          --text-muted: #64748b;
           width: 100vw;
           height: 100vh;
           display: flex;
@@ -543,12 +582,12 @@ export default function CustomerCockpit() {
         .kiosk-left-panel {
           width: 480px;
           height: 100%;
-          background: rgba(10, 14, 32, 0.8);
+          background: var(--panel-bg);
           backdrop-filter: blur(25px);
           -webkit-backdrop-filter: blur(25px);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          border: var(--panel-border);
           border-radius: 28px;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+          box-shadow: var(--glass-shadow);
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -566,8 +605,8 @@ export default function CustomerCockpit() {
 
         .kiosk-header {
           padding: 24px;
-          background: rgba(14, 20, 48, 0.85);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+          background: rgba(255, 255, 255, 0.4);
+          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -592,7 +631,7 @@ export default function CustomerCockpit() {
         .kiosk-title {
           font-size: 1.25rem;
           font-weight: 800;
-          color: #ffffff;
+          color: #0f172a;
           letter-spacing: -0.5px;
         }
         .kiosk-subtitle {
@@ -607,13 +646,13 @@ export default function CustomerCockpit() {
         }
 
         .kiosk-directory-card {
-          background: rgba(10, 14, 32, 0.8);
+          background: var(--panel-bg);
           backdrop-filter: blur(25px);
           -webkit-backdrop-filter: blur(25px);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          border: var(--panel-border);
           border-radius: 28px;
           padding: 16px 20px;
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+          box-shadow: var(--glass-shadow);
           display: flex;
           flex-direction: column;
           gap: 10px;
@@ -623,13 +662,13 @@ export default function CustomerCockpit() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          border-bottom: 1px solid rgba(255,255,255,0.06);
+          border-bottom: 1px solid rgba(15,23,42,0.06);
           padding-bottom: 10px;
         }
         .directory-title {
           font-size: 0.95rem;
           font-weight: 800;
-          color: #60a5fa;
+          color: #1d4ed8;
           text-transform: uppercase;
           letter-spacing: 0.5px;
         }
@@ -640,8 +679,8 @@ export default function CustomerCockpit() {
           flex-wrap: wrap;
         }
         .floor-filter-btn {
-          background: rgba(255,255,255,0.03);
-          border: 1px solid rgba(255,255,255,0.06);
+          background: rgba(15, 23, 42, 0.03);
+          border: 1px solid rgba(15, 23, 42, 0.06);
           color: var(--text-secondary);
           font-size: 0.72rem;
           padding: 6px 12px;
@@ -651,35 +690,36 @@ export default function CustomerCockpit() {
           transition: all 0.2s ease;
         }
         .floor-filter-btn:hover {
-          background: rgba(255,255,255,0.08);
-          color: #ffffff;
+          background: rgba(15, 23, 42, 0.08);
+          color: #0f172a;
         }
         .floor-filter-btn.active {
-          background: rgba(59, 130, 246, 0.25);
-          border-color: rgba(59, 130, 246, 0.6);
-          color: #60a5fa;
-          box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+          background: rgba(59, 130, 246, 0.12);
+          border-color: rgba(59, 130, 246, 0.3);
+          color: #1d4ed8;
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.1);
         }
 
         .kiosk-map-card {
           flex: 1;
-          background: rgba(10, 14, 32, 0.85);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: var(--panel-bg);
+          border: var(--panel-border);
           border-radius: 28px;
           position: relative;
           overflow: hidden;
-          box-shadow: 0 25px 50px rgba(0, 0, 0, 0.7);
+          box-shadow: var(--glass-shadow);
           display: flex;
           flex-direction: column;
           min-height: 0;
         }
         .kiosk-map-header {
           padding: 16px 20px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
           display: flex;
           align-items: center;
           justify-content: space-between;
-          background: rgba(14, 20, 48, 0.4);
+          background: rgba(255, 255, 255, 0.3);
+          color: var(--text-primary);
         }
         .kiosk-map-body {
           flex: 1;
@@ -688,7 +728,7 @@ export default function CustomerCockpit() {
           align-items: center;
           justify-content: center;
           padding: 20px;
-          background: radial-gradient(circle at center, rgba(12, 24, 68, 0.3) 0%, rgba(3, 5, 16, 0.8) 100%);
+          background: radial-gradient(circle at center, rgba(219, 234, 254, 0.2) 0%, rgba(248, 250, 252, 0.8) 100%);
           min-height: 0;
         }
         .kiosk-render-img {
@@ -696,12 +736,11 @@ export default function CustomerCockpit() {
           max-height: 100%;
           object-fit: contain;
           border-radius: 16px;
-          box-shadow: 0 15px 35px rgba(0,0,0,0.6);
-          border: 1px solid rgba(255,255,255,0.05);
+          box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
+          border: 1px solid rgba(15, 23, 42, 0.06);
           transition: all 0.5s ease;
         }
 
-        /* 🤖 CHAT INPUT & QUICK CHIPS GLASSMORPHIC STYLING (KIOSK CONSOLE) */
         .mobile-chips-area {
           display: flex !important;
           flex-direction: row !important;
@@ -710,7 +749,7 @@ export default function CustomerCockpit() {
           padding: 12px 16px 12px 16px !important;
           overflow-x: auto !important;
           scrollbar-width: none !important;
-          border-top: 1px solid rgba(255, 255, 255, 0.04) !important;
+          border-top: 1px solid rgba(15, 23, 42, 0.06) !important;
           flex-shrink: 0 !important;
         }
         .mobile-chips-area::-webkit-scrollbar {
@@ -719,23 +758,23 @@ export default function CustomerCockpit() {
         
         .mobile-chip {
           padding: 8px 16px !important;
-          background: rgba(255, 255, 255, 0.04) !important;
-          border: 1px solid rgba(255, 255, 255, 0.08) !important;
+          background: rgba(255, 255, 255, 0.8) !important;
+          border: 1px solid rgba(15, 23, 42, 0.08) !important;
           border-radius: 20px !important;
           font-size: 0.75rem !important;
-          color: #e2e8f0 !important;
+          color: var(--text-secondary) !important;
           cursor: pointer !important;
           white-space: nowrap !important;
           transition: all 0.2s ease !important;
           font-weight: 600 !important;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+          box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
           flex-shrink: 0 !important;
           display: inline-block !important;
         }
         .mobile-chip:hover {
-          background: rgba(59, 130, 246, 0.15) !important;
-          border-color: rgba(59, 130, 246, 0.4) !important;
-          color: #ffffff !important;
+          background: rgba(59, 130, 246, 0.1) !important;
+          border-color: rgba(59, 130, 246, 0.3) !important;
+          color: #1d4ed8 !important;
           transform: translateY(-1px) !important;
         }
         .mobile-chip:disabled {
@@ -745,7 +784,7 @@ export default function CustomerCockpit() {
 
         .mobile-input-area {
           padding: 12px 16px 20px 16px !important;
-          border-top: 1px solid rgba(255, 255, 255, 0.04) !important;
+          border-top: 1px solid rgba(15, 23, 42, 0.06) !important;
           flex-shrink: 0 !important;
         }
         
@@ -759,11 +798,11 @@ export default function CustomerCockpit() {
 
         .mobile-chat-textarea {
           flex: 1 !important;
-          background: rgba(4, 6, 15, 0.7) !important;
-          border: 1px solid rgba(255, 255, 255, 0.1) !important;
+          background: #ffffff !important;
+          border: 1px solid rgba(15, 23, 42, 0.12) !important;
           border-radius: 14px !important;
           padding: 12px 48px 12px 14px !important;
-          color: #ffffff !important;
+          color: #0f172a !important;
           font-family: var(--font-sans) !important;
           font-size: 0.82rem !important;
           resize: none !important;
@@ -773,9 +812,9 @@ export default function CustomerCockpit() {
           line-height: 1.4 !important;
         }
         .mobile-chat-textarea:focus {
-          border-color: rgba(59, 130, 246, 0.6) !important;
-          background: rgba(4, 6, 15, 0.85) !important;
-          box-shadow: 0 0 12px rgba(59, 130, 246, 0.25) !important;
+          border-color: rgba(59, 130, 246, 0.5) !important;
+          background: #ffffff !important;
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.15) !important;
         }
 
         .mobile-send-btn {
@@ -871,24 +910,28 @@ export default function CustomerCockpit() {
         .kiosk-split-panels {
           display: flex;
           gap: 20px;
-          height: 140px;
+          flex: 1.5;
+          min-height: 0;
         }
         .kiosk-info-panel {
-          flex: 1.2;
-          background: rgba(10, 14, 32, 0.8);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          flex: 1;
+          background: var(--panel-bg);
+          backdrop-filter: blur(25px);
+          -webkit-backdrop-filter: blur(25px);
+          border: var(--panel-border);
           border-radius: 24px;
           padding: 16px;
           overflow-y: auto;
           display: flex;
           flex-direction: column;
           gap: 8px;
+          min-height: 0;
         }
         .kiosk-info-panel::-webkit-scrollbar {
           width: 4px;
         }
         .kiosk-info-panel::-webkit-scrollbar-thumb {
-          background: rgba(255,255,255,0.1);
+          background: rgba(15, 23, 42, 0.1);
           border-radius: 2px;
         }
 
@@ -897,69 +940,22 @@ export default function CustomerCockpit() {
           align-items: center;
           justify-content: space-between;
           padding: 8px 12px;
-          background: rgba(255,255,255,0.015);
-          border: 1px solid rgba(255,255,255,0.03);
+          background: rgba(15, 23, 42, 0.02);
+          border: 1px solid rgba(15, 23, 42, 0.04);
           border-radius: 10px;
           cursor: pointer;
           transition: all 0.2s ease;
         }
         .kiosk-store-list-item:hover {
-          background: rgba(59, 130, 246, 0.08);
+          background: rgba(59, 130, 246, 0.06);
           border-color: rgba(59, 130, 246, 0.2);
         }
         .kiosk-store-list-item.selected {
-          background: rgba(59, 130, 246, 0.15);
-          border-color: rgba(59, 130, 246, 0.4);
+          background: rgba(59, 130, 246, 0.1);
+          border-color: rgba(59, 130, 246, 0.35);
         }
 
-        .kiosk-transfer-card {
-          flex: 1;
-          background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%);
-          border: 1px solid rgba(16, 185, 129, 0.25);
-          border-radius: 24px;
-          padding: 14px 16px;
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.4),
-                      inset 0 0 15px rgba(16, 185, 129, 0.08);
-          position: relative;
-          overflow: hidden;
-          transition: all 0.3s ease;
-        }
-        .kiosk-transfer-card:hover {
-          border-color: rgba(16, 185, 129, 0.5);
-          box-shadow: 0 15px 30px rgba(16, 185, 129, 0.15);
-        }
-        .kiosk-qr-container {
-          background: #ffffff;
-          padding: 6px;
-          border-radius: 14px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 8px 20px rgba(0,0,0,0.5);
-          position: relative;
-        }
-        .kiosk-transfer-info {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          text-align: left;
-        }
-        .kiosk-transfer-title {
-          font-size: 0.78rem;
-          font-weight: 800;
-          color: #34d399;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-        .kiosk-transfer-desc {
-          font-size: 0.65rem;
-          color: var(--text-secondary);
-          line-height: 1.35;
-        }
+
 
         /* 📱 MOBILE DEVICE MOCKUP FRAME */
         .mobile-device-frame {
@@ -1008,7 +1004,7 @@ export default function CustomerCockpit() {
 
         .mobile-screen {
           flex: 1;
-          background: rgba(10, 14, 32, 0.85);
+          background: #f8fafc;
           backdrop-filter: blur(25px);
           -webkit-backdrop-filter: blur(25px);
           border-radius: 32px;
@@ -1016,13 +1012,13 @@ export default function CustomerCockpit() {
           display: flex;
           flex-direction: column;
           position: relative;
-          border: 1px solid rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(15, 23, 42, 0.06);
         }
 
         .mobile-screen-header {
           padding: 36px 16px 12px 16px;
-          background: rgba(14, 20, 48, 0.8);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+          background: rgba(255, 255, 255, 0.85);
+          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -1056,7 +1052,7 @@ export default function CustomerCockpit() {
           height: 10px;
           border-radius: 50%;
           background: #10b981;
-          border: 2px solid #000;
+          border: 2px solid #fff;
           box-shadow: 0 0 6px #10b981;
           animation: statusGlow 2s infinite ease-in-out;
         }
@@ -1072,7 +1068,7 @@ export default function CustomerCockpit() {
         .header-app-name {
           font-size: 0.95rem;
           font-weight: 700;
-          color: #f1f3f9;
+          color: #0f172a;
           letter-spacing: -0.2px;
         }
         .header-status-text {
@@ -1088,8 +1084,8 @@ export default function CustomerCockpit() {
           display: flex;
           align-items: center;
           gap: 4px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: rgba(15, 23, 42, 0.03);
+          border: 1px solid rgba(15, 23, 42, 0.06);
           border-radius: 12px;
           padding: 6px 10px;
           color: var(--text-secondary);
@@ -1100,41 +1096,41 @@ export default function CustomerCockpit() {
           text-decoration: none;
         }
         .back-portal-btn:hover {
-          background: rgba(255, 255, 255, 0.1);
-          color: #f1f3f9;
-          border-color: rgba(59, 130, 246, 0.4);
-          box-shadow: 0 0 10px rgba(59, 130, 246, 0.15);
+          background: rgba(15, 23, 42, 0.06);
+          color: #0f172a;
+          border-color: rgba(15, 23, 42, 0.12);
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.08);
         }
 
         .layout-switch-floating-btn {
           position: fixed;
           bottom: 24px;
           right: 24px;
-          background: rgba(14, 20, 48, 0.85);
-          border: 1px solid rgba(59, 130, 246, 0.4);
+          background: rgba(255, 255, 255, 0.85);
+          border: 1px solid rgba(59, 130, 246, 0.3);
           border-radius: 30px;
           padding: 12px 24px;
-          color: #60a5fa;
+          color: #1d4ed8;
           font-size: 0.85rem;
           font-weight: 700;
           cursor: pointer;
           z-index: 999;
-          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6),
-                      0 0 15px rgba(59, 130, 246, 0.2);
+          box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08),
+                      0 0 15px rgba(59, 130, 246, 0.15);
           backdrop-filter: blur(16px);
           display: none;
           transition: all 0.2s ease;
         }
         .layout-switch-floating-btn:hover {
-          background: rgba(59, 130, 246, 0.15);
+          background: #ffffff;
           transform: translateY(-2px);
-          box-shadow: 0 15px 30px rgba(0, 0, 0, 0.7),
-                      0 0 20px rgba(59, 130, 246, 0.3);
+          box-shadow: 0 15px 30px rgba(15, 23, 42, 0.12),
+                      0 0 20px rgba(59, 130, 246, 0.25);
         }
 
         .promo-carousel-container {
-          background: rgba(14, 20, 48, 0.4);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+          background: rgba(255, 255, 255, 0.3);
+          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
           padding: 8px 12px;
           z-index: 5;
         }
@@ -1159,8 +1155,8 @@ export default function CustomerCockpit() {
         }
         .promo-card {
           flex: 0 0 185px;
-          background: rgba(255, 255, 255, 0.02);
-          border: 1px solid rgba(255, 255, 255, 0.05);
+          background: rgba(255, 255, 255, 0.6);
+          border: 1px solid rgba(15, 23, 42, 0.06);
           border-radius: 10px;
           padding: 6px 8px;
           cursor: pointer;
@@ -1183,7 +1179,7 @@ export default function CustomerCockpit() {
         .promo-card-discount {
           font-size: 0.75rem;
           font-weight: 800;
-          color: #f1f3f9;
+          color: var(--text-primary);
           margin-bottom: 1px;
         }
         .promo-card-copy {
@@ -1194,8 +1190,8 @@ export default function CustomerCockpit() {
 
         .timeline-widget-container {
           margin: 16px 0;
-          background: rgba(255, 255, 255, 0.015);
-          border: 1px solid rgba(255, 255, 255, 0.05);
+          background: rgba(15, 23, 42, 0.015);
+          border: 1px solid rgba(15, 23, 42, 0.05);
           border-radius: 14px;
           padding: 14px;
           position: relative;
@@ -1205,13 +1201,13 @@ export default function CustomerCockpit() {
           align-items: center;
           justify-content: space-between;
           margin-bottom: 16px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          border-bottom: 1px solid rgba(15, 23, 42, 0.05);
           padding-bottom: 6px;
         }
         .timeline-widget-title {
           font-size: 0.85rem;
           font-weight: 800;
-          color: #60a5fa;
+          color: #1d4ed8;
           text-transform: uppercase;
           letter-spacing: 0.8px;
           display: flex;
@@ -1234,7 +1230,7 @@ export default function CustomerCockpit() {
           width: 2px;
           background: linear-gradient(to bottom, #3b82f6 20%, #10b981 50%, #f59e0b 80%, #ef4444 100%);
           opacity: 0.6;
-          box-shadow: 0 0 6px rgba(59, 130, 246, 0.3);
+          box-shadow: 0 0 6px rgba(59, 130, 246, 0.2);
         }
 
         .timeline-step {
@@ -1251,9 +1247,9 @@ export default function CustomerCockpit() {
           width: 16px;
           height: 16px;
           border-radius: 50%;
-          background: #0a0e20;
+          background: #ffffff;
           border: 2px solid #3b82f6;
-          box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+          box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1261,8 +1257,8 @@ export default function CustomerCockpit() {
           transition: all 0.3s ease;
         }
         .timeline-card {
-          background: rgba(255, 255, 255, 0.025);
-          border: 1px solid rgba(255, 255, 255, 0.04);
+          background: rgba(255, 255, 255, 0.8);
+          border: 1px solid rgba(15, 23, 42, 0.05);
           border-radius: 10px;
           padding: 10px 12px;
           transition: all 0.2s ease;
@@ -1277,8 +1273,8 @@ export default function CustomerCockpit() {
         .timeline-card-time {
           font-size: 0.68rem;
           font-family: var(--font-mono);
-          color: #60a5fa;
-          background: rgba(59, 130, 246, 0.1);
+          color: #1d4ed8;
+          background: rgba(59, 130, 246, 0.08);
           padding: 2px 6px;
           border-radius: 4px;
           font-weight: 600;
@@ -1294,15 +1290,15 @@ export default function CustomerCockpit() {
           border-radius: 3px;
           text-transform: uppercase;
         }
-        .floor-badge.floor-1 { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
-        .floor-badge.floor-2 { background: rgba(139, 92, 246, 0.15); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.2); }
-        .floor-badge.floor-3 { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.2); }
-        .floor-badge.floor-parking { background: rgba(107, 114, 128, 0.2); color: #d1d5db; border: 1px solid rgba(107, 114, 128, 0.2); }
-        .floor-badge.floor-entrance { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.2); }
+        .floor-badge.floor-1 { background: rgba(59, 130, 246, 0.08); color: #1d4ed8; border: 1px solid rgba(59, 130, 246, 0.15); }
+        .floor-badge.floor-2 { background: rgba(139, 92, 246, 0.08); color: #6d28d9; border: 1px solid rgba(139, 92, 246, 0.15); }
+        .floor-badge.floor-3 { background: rgba(239, 68, 68, 0.08); color: #b91c1c; border: 1px solid rgba(239, 68, 68, 0.15); }
+        .floor-badge.floor-parking { background: rgba(107, 114, 128, 0.1); color: #4b5563; border: 1px solid rgba(107, 114, 128, 0.15); }
+        .floor-badge.floor-entrance { background: rgba(16, 185, 129, 0.08); color: #047857; border: 1px solid rgba(16, 185, 129, 0.15); }
         .timeline-card-title {
           font-size: 0.82rem;
           font-weight: 700;
-          color: #f1f3f9;
+          color: var(--text-primary);
           display: flex;
           align-items: center;
           gap: 6px;
@@ -1317,9 +1313,9 @@ export default function CustomerCockpit() {
         }
         .timeline-card-notes {
           font-size: 0.68rem;
-          color: #f59e0b;
-          background: rgba(245, 158, 11, 0.08);
-          border: 1px dashed rgba(245, 158, 11, 0.25);
+          color: #b45309;
+          background: rgba(245, 158, 11, 0.06);
+          border: 1px dashed rgba(245, 158, 11, 0.2);
           border-radius: 6px;
           padding: 4px 8px;
           margin-top: 6px;
@@ -1335,7 +1331,7 @@ export default function CustomerCockpit() {
           gap: 8px;
           font-size: 0.68rem;
           color: var(--text-secondary);
-          background: rgba(255, 255, 255, 0.01);
+          background: rgba(15, 23, 42, 0.01);
           border-radius: 8px;
           border-left: 2px solid rgba(16, 185, 129, 0.3);
           font-style: italic;
@@ -1359,14 +1355,24 @@ export default function CustomerCockpit() {
           border-bottom-right-radius: 4px !important;
           background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
         }
+        .mobile-bubble.user .message-content,
+        .mobile-bubble.user .message-content * {
+          color: #ffffff !important;
+        }
         .mobile-bubble.agent {
           border-bottom-left-radius: 4px !important;
-          background: rgba(255, 255, 255, 0.035) !important;
-          border: 1px solid rgba(255, 255, 255, 0.05) !important;
+          background: rgba(255, 255, 255, 0.85) !important;
+          border: 1px solid rgba(15, 23, 42, 0.06) !important;
+          color: var(--text-primary) !important;
+          box-shadow: 0 2px 8px rgba(15, 23, 42, 0.02) !important;
+        }
+        .mobile-bubble.agent .message-content,
+        .mobile-bubble.agent .message-content * {
+          color: var(--text-primary) !important;
         }
         .mobile-reasoning-drawer {
-          background: rgba(255, 255, 255, 0.01) !important;
-          border-color: rgba(255, 255, 255, 0.05) !important;
+          background: rgba(15, 23, 42, 0.02) !important;
+          border: 1px solid rgba(15, 23, 42, 0.05) !important;
           padding: 8px 10px !important;
           margin-bottom: 10px !important;
           border-radius: 6px !important;
@@ -1534,12 +1540,12 @@ export default function CustomerCockpit() {
         .divider-circle {
           width: 16px;
           height: 16px;
-          background: #030510; /* Match viewport background */
+          background: #f8fafc; /* Match premium light portal background */
           border-radius: 50%;
           position: absolute;
           top: 2px;
           z-index: 2;
-          box-shadow: inset 0 0 5px rgba(0,0,0,0.8);
+          box-shadow: inset 0 0 5px rgba(15, 23, 42, 0.15);
         }
 
         .divider-circle.left {
@@ -1714,12 +1720,12 @@ export default function CustomerCockpit() {
             })}
             <div ref={feedEndRef} />
           </div>
-          <div className="mobile-chips-area" style={{ background: "rgba(14,20,48,0.5)" }}>
+          <div className="mobile-chips-area" style={{ background: "rgba(255, 255, 255, 0.45)" }}>
             {quickActions.map((chip, idx) => (
               <button key={idx} className="mobile-chip" onClick={() => { setPrompt(chip.prompt); executeChatStream(chip.prompt); }} disabled={isGenerating}>{chip.label}</button>
             ))}
           </div>
-          <div className="mobile-input-area" style={{ paddingBottom: "16px", background: "rgba(14,20,48,0.9)" }}>
+          <div className="mobile-input-area" style={{ paddingBottom: "16px", background: "var(--panel-bg)", borderTop: "var(--panel-border)" }}>
             <div className="mobile-input-row">
               <textarea className="mobile-chat-textarea" placeholder="Ask co-pilot..." value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={handleKeyDown} disabled={isGenerating} />
               <button className="mobile-send-btn" onClick={() => executeChatStream(prompt)} disabled={isGenerating || !prompt.trim()}>
@@ -1730,61 +1736,6 @@ export default function CustomerCockpit() {
         </div>
 
         <div className="kiosk-right-panel">
-          <div className="kiosk-directory-card">
-            <span className="directory-title">🏢 Mall Interactive Touch Directory</span>
-            <div className="floor-filters-row" style={{ marginTop: "6px" }}>
-              {["all", "3", "2", "1", "0", "-1"].map((fl) => (
-                <button 
-                  key={fl} 
-                  className={`floor-filter-btn ${selectedFloorFilter === fl ? "active" : ""}`} 
-                  onClick={() => setSelectedFloorFilter(fl)}
-                >
-                  {fl === "all" ? "🏢 All Floors" : `Floor ${fl}`}
-                </button>
-              ))}
-            </div>
-            {/* Widescreen Glassmorphic Search Bar */}
-            <div className="directory-search-row" style={{ position: "relative", marginTop: "10px" }}>
-              <input 
-                type="text" 
-                className="directory-search-input" 
-                placeholder="🔍 Search stores, dining, categories (e.g. shoes, sushi, salon, parking)..."
-                value={storeSearchQuery}
-                onChange={(e) => setStoreSearchQuery(e.target.value)}
-                style={{
-                  width: "100%",
-                  background: "rgba(4, 6, 15, 0.7)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
-                  borderRadius: "12px",
-                  padding: "10px 14px 10px 38px",
-                  color: "#ffffff",
-                  fontSize: "0.82rem",
-                  outline: "none",
-                  transition: "all 0.2s ease"
-                }}
-              />
-              <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#8c9bb3", fontSize: "0.85rem" }}>🔍</span>
-              {storeSearchQuery && (
-                <button 
-                  onClick={() => setStoreSearchQuery("")}
-                  style={{
-                    position: "absolute",
-                    right: "12px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    background: "transparent",
-                    border: "none",
-                    color: "#8c9bb3",
-                    cursor: "pointer",
-                    fontSize: "0.85rem"
-                  }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          </div>
-
           <div className="kiosk-map-card">
             <div className="kiosk-map-header">
               <span>LIVE 3D SITE PLAN DIRECTORY</span>
@@ -1833,6 +1784,61 @@ export default function CustomerCockpit() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          <div className="kiosk-directory-card">
+            <span className="directory-title">🏢 Mall Interactive Touch Directory</span>
+            <div className="floor-filters-row" style={{ marginTop: "6px" }}>
+              {["all", "3", "2", "1", "0", "-1"].map((fl) => (
+                <button 
+                  key={fl} 
+                  className={`floor-filter-btn ${selectedFloorFilter === fl ? "active" : ""}`} 
+                  onClick={() => setSelectedFloorFilter(fl)}
+                >
+                  {fl === "all" ? "🏢 All Floors" : `Floor ${fl}`}
+                </button>
+              ))}
+            </div>
+            {/* Widescreen Glassmorphic Search Bar */}
+            <div className="directory-search-row" style={{ position: "relative", marginTop: "10px" }}>
+              <input 
+                type="text" 
+                className="directory-search-input" 
+                placeholder="🔍 Search stores, dining, categories (e.g. shoes, sushi, salon, parking)..."
+                value={storeSearchQuery}
+                onChange={(e) => setStoreSearchQuery(e.target.value)}
+                style={{
+                  width: "100%",
+                  background: "rgba(255, 255, 255, 0.9)",
+                  border: "1px solid rgba(15, 23, 42, 0.15)",
+                  borderRadius: "12px",
+                  padding: "10px 14px 10px 38px",
+                  color: "#0f172a",
+                  fontSize: "0.82rem",
+                  outline: "none",
+                  transition: "all 0.2s ease"
+                }}
+              />
+              <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "0.85rem" }}>🔍</span>
+              {storeSearchQuery && (
+                <button 
+                  onClick={() => setStoreSearchQuery("")}
+                  style={{
+                    position: "absolute",
+                    right: "12px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "transparent",
+                    border: "none",
+                    color: "#64748b",
+                    cursor: "pointer",
+                    fontSize: "0.85rem"
+                  }}
+                >
+                  ✕
+                </button>
+              )}
             </div>
           </div>
 
@@ -1928,26 +1934,45 @@ export default function CustomerCockpit() {
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <div style={{ fontSize: "0.75rem", fontWeight: "800", color: "#8c9bb3", textTransform: "uppercase", display: "flex", justifyContent: "between", alignItems: "center" }}>
+                  <div style={{ fontSize: "0.75rem", fontWeight: "800", color: "var(--text-secondary)", textTransform: "uppercase", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span>🏬 Tenants & Directory ({filteredStores.length})</span>
                     {selectedFloorFilter !== "all" && <span style={{ color: "#3b82f6", marginLeft: "auto" }}>Filter: Floor {selectedFloorFilter}</span>}
                   </div>
                   <div className="kiosk-stores-scroll-container" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                     {filteredStores.length > 0 ? (
-                      filteredStores.slice(0, 8).map((store) => (
+                      filteredStores.map((store) => (
                         <div 
                           key={store.name} 
                           className={`kiosk-store-list-item ${selectedKioskStore?.name === store.name ? "selected" : ""}`}
                           onClick={() => setSelectedKioskStore(store)}
                         >
-                          <span style={{ fontSize: "0.78rem", fontWeight: "700", color: "#f1f3f9" }}>
-                            {getActivityEmoji(store.name)} {store.name}
-                          </span>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px", alignItems: "flex-start" }}>
+                            <span style={{ fontSize: "0.78rem", fontWeight: "700", color: "var(--text-primary)" }}>
+                              {getActivityEmoji(store.name)} {store.name}
+                            </span>
+                            {store.deal && (
+                              <span style={{
+                                fontSize: "0.6rem",
+                                fontWeight: "600",
+                                color: "#b45309",
+                                background: "rgba(245, 158, 11, 0.15)",
+                                border: "1px dashed rgba(245, 158, 11, 0.4)",
+                                borderRadius: "4px",
+                                padding: "1px 6px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "2px",
+                                marginTop: "2px"
+                              }}>
+                                🏷️ {store.deal}
+                              </span>
+                            )}
+                          </div>
                           <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                             <span className="floor-badge floor-1" style={{ fontSize: "0.55rem", padding: "1px 4px" }}>
                               {store.floor}
                             </span>
-                            <span style={{ fontSize: "0.62rem", color: "#8c9bb3", fontFamily: "monospace" }}>{store.zone}</span>
+                            <span style={{ fontSize: "0.62rem", color: "var(--text-secondary)", fontFamily: "monospace" }}>{store.zone}</span>
                           </div>
                         </div>
                       ))
@@ -1959,26 +1984,6 @@ export default function CustomerCockpit() {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Futuristic Sync Card with moving scanline */}
-            <div className="kiosk-transfer-card" onClick={() => setIsMobilePreview(true)} style={{ cursor: "pointer" }}>
-              <div className="kiosk-qr-container">
-                <div className="glowing-red-scanline"></div>
-                <svg width="76" height="76" viewBox="0 0 29 29" fill="none" style={{ background: "#ffffff", padding: "4px", borderRadius: "10px" }}>
-                  <path d="M0 0h9v9H0V0zm2 2v5h5V2H2zm8 0h3v1h-3V2zm0 2h1v1h-1V4zm2 1h1v1h-1V5zm-2 2h3v1h-3V7zm10-7h9v9h-9V0zm2 2v5h5V2h-5zM0 10h1v3H0v-3zm3 0h3v1H3v-1zm0 2h1v1H3v-1zm4-2h1v2H7v-2zm1-2h1v1H8V8zm4 3h1v2h-1v-2zm2 1h2v1h-2v-1zm4-3h1v1h-1V9zm-2 2v2h1v-2h-1zm3-1h3v1h-3v-1zm3 1h1v2h-1v-2zm-3 2h2v1h-2v-1zm5-3h1v1h-1V9zm-1 3v2h-2v-1h1v-1h1zm-8 4H0v9h9v-9H0zm2 2v5h5v-5H2zm8 1h1v1h-1v-1zm2-1h1v3h-1v-3zm0 4h2v1h-2v-1zm3-3h1v1h-1v-1zm2 1h1v2h-1v-2zm1-2h2v1h-2v-1zm3 2h1v3h-1v-3zm-1 4h2v1h-2v-1zm3-3h1v2h-1v-2zm0 3h1v1h-1v-1z" fill="#0c1230" />
-                </svg>
-              </div>
-              <div className="kiosk-transfer-info">
-                <span className="kiosk-transfer-title">📱 Take It With You</span>
-                <p className="kiosk-transfer-desc">
-                  Scan this QR code to sync your active route & discount vouchers instantly to your phone.
-                </p>
-                <div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "2px" }}>
-                  <span style={{ width: "6px", height: "6px", background: "#10b981", borderRadius: "50%", display: "inline-block", animation: "statusGlow 1.5s infinite" }}></span>
-                  <span style={{ fontSize: "0.58rem", color: "#10b981", fontWeight: "700" }}>MOBILE SYNC READY</span>
-                </div>
-              </div>
             </div>
           </div>
         </div>
