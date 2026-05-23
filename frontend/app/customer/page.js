@@ -69,7 +69,7 @@ export default function CustomerCockpit() {
     "Parking A": { top: "85%", left: "45%" }
   };
 
-  const mallHappenings = [
+  const [happeningsList, setHappeningsList] = useState([
     {
       id: "happening-1",
       type: "event",
@@ -118,7 +118,24 @@ export default function CustomerCockpit() {
       actionLabel: "👟 View Retro Deals",
       prompt: "Check SneakerVault deals, activate coupon, and plan a shopping stop"
     }
-  ];
+  ]);
+
+  useEffect(() => {
+    const fetchPulseFeed = async () => {
+      try {
+        const response = await fetch("http://localhost:8000/api/pulse");
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.feed && data.feed.length > 0) {
+            setHappeningsList(data.feed);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch live happenings pulse feed from backend api", err);
+      }
+    };
+    fetchPulseFeed();
+  }, []);
 
   useEffect(() => {
     const fetchStores = async () => {
@@ -2185,7 +2202,7 @@ export default function CustomerCockpit() {
                 🎉 Live Happenings & Deals
               </span>
               <div className="happenings-list-container" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {mallHappenings.map((happening) => (
+                {Array.isArray(happeningsList) && happeningsList.map((happening) => (
                   <div 
                     key={happening.id} 
                     className="happening-card"

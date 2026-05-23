@@ -531,6 +531,104 @@ async def scan_endpoint():
     return EventSourceResponse(event_generator())
 
 
+@app.get("/api/pulse")
+def get_pulse_feed():
+    """
+    Fetches the latest curated dynamic Happenings & Deals feed from the 'pulse-dashboard-feed' index.
+    """
+    es_url = os.getenv("ELASTICSEARCH_URL", "")
+    es_api_key = os.getenv("ELASTICSEARCH_API_KEY", "")
+    
+    # Static fallback in case Elasticsearch is offline or index hasn't been written to by the workflow yet
+    fallback_feed = [
+        {
+            "id": "happening-1",
+            "type": "event",
+            "badge": "🎨 Art & Craft",
+            "title": "Spring Artisan Market",
+            "desc": "Local crafts, handmade jewelry, and organic food stalls in the Central Atrium.",
+            "time": "Today, 10:00 AM - 8:00 PM",
+            "location": "📍 Central Atrium (Floor 1)",
+            "store": "Café Bloom",
+            "actionLabel": "🧭 Route to Atrium",
+            "prompt": "Plan a walking itinerary starting from Entrance A to Café Bloom to visit the Spring Artisan Market in the Central Atrium"
+        },
+        {
+            "id": "happening-2",
+            "type": "promo",
+            "badge": "⚡ Flash Promo",
+            "title": "Café Bloom: Pastry Happy Hour",
+            "desc": "Get an exclusive free organic pastry with any Large Latte purchase.",
+            "time": "1:00 PM - 4:00 PM Daily",
+            "location": "📍 Food Court (Floor 1)",
+            "store": "Café Bloom",
+            "actionLabel": "🎟️ Claim BOGO Pastry",
+            "prompt": "Activate customer coupon for Store: **Café Bloom** and Discount: **Free Pastry w/ Large Latte**"
+        },
+        {
+            "id": "happening-3",
+            "type": "music",
+            "badge": "🎷 Live Music",
+            "title": "Sunset Jazz Concert",
+            "desc": "Enjoy smooth contemporary jazz tunes while dining at the Food Court.",
+            "time": "Tonight, 6:00 PM - 9:00 PM",
+            "location": "📍 Food Court (Floor 1)",
+            "store": "Sushi Express",
+            "actionLabel": "🧭 Plan Dinner Route",
+            "prompt": "Plan a 90-minute dining stop at Sushi Express including the BOGO Roll deal while enjoying the Sunset Jazz Concert"
+        },
+        {
+            "id": "happening-4",
+            "type": "promo",
+            "badge": "🎁 Seasonal Sale",
+            "title": "SneakerVault Retro Weekend",
+            "desc": "Get an exclusive 20% off all vintage and retro sneakers releases.",
+            "time": "This Friday - Sunday",
+            "location": "📍 East-Wing (Floor 1)",
+            "store": "SneakerVault",
+            "actionLabel": "👟 View Retro Deals",
+            "prompt": "Check SneakerVault deals, activate coupon, and plan a shopping stop"
+        }
+    ]
+
+    if not es_url or not es_api_key:
+        return {"feed": fallback_feed, "source": "fallback"}
+        
+    try:
+        from elasticsearch import Elasticsearch
+        es = Elasticsearch(es_url, api_key=es_api_key, request_timeout=10)
+        
+        if not es.indices.exists(index="pulse-dashboard-feed"):
+            return {"feed": fallback_feed, "source": "fallback"}
+            
+        # Search for the latest curation document
+        query = {
+            "query": {"match_all": {}},
+            "sort": [{"timestamp": {"order": "desc"}}],
+            "size": 1
+        }
+        res = es.search(index="pulse-dashboard-feed", body=query)
+        hits = res.get("hits", {}).get("hits", [])
+        
+        if hits:
+            source = hits[0]["_source"]
+            curated = source.get("curated_feed", [])
+            # If curated is stored as a JSON string, load it
+            if isinstance(curated, str):
+                import json
+                try:
+                    curated = json.loads(curated)
+                except Exception:
+                    pass
+            if isinstance(curated, list) and len(curated) > 0:
+                return {"feed": curated, "source": "live_elasticsearch"}
+                
+    except Exception as e:
+        print(f"[API] Error loading curated pulse feed from Elasticsearch: {str(e)}")
+        
+    return {"feed": fallback_feed, "source": "fallback"}
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     host = os.getenv("HOST", "0.0.0.0")

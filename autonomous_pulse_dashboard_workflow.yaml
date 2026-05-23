@@ -1,0 +1,250 @@
+# Elastic Agent Builder Workflow Definition
+# Workflow Name: autonomous_pulse_dashboard
+# Route: proposal-3-real-time-autonomous-dashboard-curation
+# Target Platform: Kibana Workflows, Elastic Agent Builder & Elasticsearch Serverless
+# 
+# Description:
+#   This workflow acts as the real-time curation engine for the mall Touchscreen Kiosk
+#   "Live Happenings & Deals" section. It coordinates a team of three specialized subagents
+#   (Environmental, Tenant Distress, and Trend/Crowd Subagents) to scan IoT sensors, external APIs,
+#   and tenant traffic indices. It resolves environmental constraints (e.g., weather and time),
+#   promotes struggling stores, mitigates crowd bottlenecks, and indexes the finalized dynamic
+#   advertising feed back into Elasticsearch.
+
+name: autonomous_pulse_dashboard
+description: "Orchestrates multi-subagent pipelines to curate the mall kiosk Happenings & Deals feed in real-time."
+triggers:
+  - type: manual
+    inputs:
+      - name: force_refresh
+        type: boolean
+        description: "Bypass cached states and force immediate subagent execution"
+        default: true
+      - name: override_weather
+        type: string
+        description: "Simulate specific weather conditions (e.g., Rainy, Sunny, Extreme Heat)"
+        default: ""
+  - type: scheduled
+    with:
+      every: "5m"  # Run automatically every 5 minutes to keep the kiosk fresh
+
+steps:
+  # ---------------------------------------------------------------------------
+  # SUBAGENT 1: THE ENVIRONMENTAL SUBAGENT
+  # ---------------------------------------------------------------------------
+  # Goal: Consult external weather and time parameters.
+  #   - Rainy Saturday: Prioritizes indoor entertainment & comfort food.
+  #   - Hot Weekday @ 12:00 PM: Prioritizes lunch deals & air-conditioned zones.
+  # ---------------------------------------------------------------------------
+  
+  - name: get_external_weather
+    type: http
+    with:
+      url: "https://api.open-meteo.com/v1/forecast?latitude=24.7136&longitude=46.6753&current=temperature_2m,weather_code"
+      method: "GET"
+      headers:
+        Accept: "application/json"
+
+  - name: environmental_subagent_reasoning
+    type: ai.prompt
+    connector-id: "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d" # REPLACE with your actual Kibana Gemini Connector UUID (from Stack Management > Connectors)
+    with:
+      prompt: |
+        You are the Mall Environmental Subagent. Analyze the current external environment:
+        - Weather Forecast Data: {{ steps.get_external_weather.output }}
+        - Current Local Time: {{ 'now' | date: '%H:%M %p' }}
+        - Current Day of Week: {{ 'now' | date: '%A' }}
+        - Weather Override (If any): {{ inputs.override_weather }}
+
+        Determine the core thematic focus of the mall's dynamic advertisement feed:
+        1. If it is a rainy Saturday or weekend afternoon: Prioritize indoor comfort (like Cinema, Virtual Arcade, bowling) and comfort food (ramen, hot coffee, bakeries).
+        2. If it is a hot weekday around 11:00 AM - 2:00 PM: Prioritize quick lunch specials, iced beverages, and cold desserts situated in highly air-conditioned interior zones.
+        3. Otherwise: Maintain a balanced seasonal focus.
+
+        Output your results in a structured JSON payload:
+        {
+          "thematic_focus": "INDOOR_ENTERTAINMENT" | "LUNCH_AND_AC" | "STANDARD",
+          "target_categories": ["Dining", "Entertainment", "Apparel"],
+          "priority_zones": ["food-court", "electronics-wing"],
+          "rationale": "Brief 1-sentence rationale explaining your decision"
+        }
+
+  # ---------------------------------------------------------------------------
+  # SUBAGENT 2: THE TENANT DISTRESS SUBAGENT
+  # ---------------------------------------------------------------------------
+  # Goal: Identify stores with low traffic and boost their deals.
+  # ---------------------------------------------------------------------------
+
+  - name: query_tenant_foot_traffic
+    type: elasticsearch.esql.query
+    with:
+      query: |
+        FROM "foot-traffic"
+        | STATS avg(visitor_count) BY zone, floor
+        | LIMIT 10
+
+  - name: query_active_deals
+    type: elasticsearch.search
+    with:
+      index: "promotions-history"
+      query:
+        match_all: {}
+      size: 50
+
+  - name: tenant_distress_subagent_reasoning
+    type: ai.prompt
+    connector-id: "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d" # REPLACE with your actual Kibana Gemini Connector UUID (from Stack Management > Connectors)
+    with:
+      prompt: |
+        You are the Tenant Distress Subagent. Your task is to identify stores that are currently struggling for foot traffic and dynamically boost their active campaigns to the "Hot Deals" showcase.
+
+        Here is the recent zone-level foot traffic averages:
+        {{ steps.query_tenant_foot_traffic.output }}
+
+        Here are all active promotions currently configured in the mall:
+        {{ steps.query_active_deals.output }}
+
+        Identify 1-2 participating tenants situated in low-traffic zones that have active promotions. Boost their offers so that the mall can direct shoppers to these stores.
+        
+        Output your recommendations in a structured JSON format:
+        {
+          "distressed_stores": ["SneakerVault", "QuickFix Phones"],
+          "boosted_promotions": [
+            {
+              "store": "Store Name",
+              "deal": "Promo Details",
+              "boost_score": 1.5,
+              "reason": "Foot traffic in East-Wing is down by 35% this hour"
+            }
+          ]
+        }
+
+  # ---------------------------------------------------------------------------
+  # SUBAGENT 3: THE TREND/CROWD SUBAGENT
+  # ---------------------------------------------------------------------------
+  # Goal: Avoid dangerous overcrowding in critical zones (like the Food Court).
+  # ---------------------------------------------------------------------------
+
+  - name: query_iot_sensors
+    type: elasticsearch.search
+    with:
+      index: "iot-sensors-data"
+      query:
+        bool:
+          must:
+            - match:
+                sensor_type: "occupancy"
+            - range:
+                timestamp:
+                  gte: "now-30m"
+      size: 20
+
+  - name: trend_crowd_subagent_reasoning
+    type: ai.prompt
+    connector-id: "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d" # REPLACE with your actual Kibana Gemini Connector UUID (from Stack Management > Connectors)
+    with:
+      prompt: |
+        You are the Trend/Crowd Subagent. Your role is to monitor IoT foot traffic occupancy telemetry and prevent dangerous overcrowding.
+
+        Here is the last 30 minutes of IoT sensor data:
+        {{ steps.query_iot_sensors.output }}
+
+        Determine if key areas (specifically the Food Court on Floor 1) are overcrowded (e.g. occupancy index > 80%).
+        If a critical zone is overcrowded:
+        1. Recommend filtering out quick-service food court deals from the dashboard for the next hour to redirect visitors.
+        2. Replace them with sit-down restaurants, services, or apparel shops located in quieter wings (e.g., West-Wing or Services-Hub on Floor 3).
+
+        Output your analysis in a structured JSON payload:
+        {
+          "is_overcrowded": true | false,
+          "overcrowded_zones": ["food-court"],
+          "divert_shoppers_to": ["west-wing", "services-hub"],
+          "filter_out_categories": ["Quick-Service Dining"],
+          "mitigation_plan": "Diverting traffic away from Food Court due to high occupancy telemetry"
+        }
+
+  # ---------------------------------------------------------------------------
+  # SYNTHESIS & MERGE STEP
+  # ---------------------------------------------------------------------------
+  # Coordinates the outputs from all three subagents to form a clean, conflict-free,
+  # and optimized "Live Happenings & Deals" JSON array.
+  # ---------------------------------------------------------------------------
+
+  - name: synthesize_pulse_dashboard_feed
+    type: ai.prompt
+    connector-id: "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d" # REPLACE with your actual Kibana Gemini Connector UUID (from Stack Management > Connectors)
+    with:
+      prompt: |
+        You are the Lead Dashboard Synthesizer. You have received curation inputs from three specialized subagents:
+        
+        1. Environmental Subagent (Weather/Time focus):
+        {{ steps.environmental_subagent_reasoning.output }}
+        
+        2. Tenant Distress Subagent (low-traffic boost):
+        {{ steps.tenant_distress_subagent_reasoning.output }}
+        
+        3. Trend/Crowd Subagent (overcrowding mitigation):
+        {{ steps.trend_crowd_subagent_reasoning.output }}
+
+        Create a final, conflict-free, and premium curation list of exactly 4 "Happenings" for the widescreen kiosk dashboard.
+        
+        CONSTRAINTS & CONFLICT RESOLUTION:
+        - If the Environmental Subagent recommends comfort food (which is in the Food Court), but the Trend/Crowd Subagent reports that the Food Court is dangerously overcrowded, RESOLVE the conflict by selecting a comfort-oriented restaurant in a quieter wing (e.g. Café Bloom in West-Wing) and filter out Food Court items.
+        - Ensure at least 1 "Struggling Tenant" deal recommended by the Tenant Distress subagent is boosted with a high-visibility badge (e.g. "⚡ Flash Promo" or "🔥 Hot Deal").
+        - Assemble a diverse mixture of 4 cards: 1 Event, 2 Promos, and 1 Live Activity (music/art).
+        - Each item must have:
+          - id (unique string, e.g. "pulse-1")
+          - type ("event" | "promo" | "music")
+          - badge (string emoji + text, e.g. "⚡ Flash Promo")
+          - title (compelling, curated title)
+          - desc (compelling description highlighting weather context or crowd mitigation alternatives)
+          - time (time bounds, e.g. "Now - 3:00 PM")
+          - location (e.g. "📍 East-Wing (Floor 1)")
+          - store (exact matching store name in the directory)
+          - actionLabel (action description, e.g. "🎟️ Claim Coupon" or "🧭 Route to Store")
+          - prompt (explicit shopper agent prompt that executes when clicked)
+
+        Format the output strictly as a JSON array of 4 items:
+        [
+          {
+            "id": "pulse-1",
+            "type": "promo",
+            "badge": "⚡ Hot Deal",
+            "title": "...",
+            "desc": "...",
+            "time": "...",
+            "location": "...",
+            "store": "...",
+            "actionLabel": "...",
+            "prompt": "..."
+          }
+        ]
+
+  # ---------------------------------------------------------------------------
+  # WRITE CURATION RESULT TO ELASTICSEARCH
+  # ---------------------------------------------------------------------------
+  # Overwrites the 'pulse-dashboard-feed' index with the newly synthesized 4 items
+  # so that the Next.js touch kiosk displays the curated recommendations instantly.
+  # ---------------------------------------------------------------------------
+
+  - name: update_pulse_feed_index
+    type: elasticsearch.index
+    with:
+      index: "pulse-dashboard-feed"
+      document:
+        timestamp: "{{ 'now' | date: '%Y-%m-%dT%H:%M:%SZ' }}"
+        curated_feed: "{{ steps.synthesize_pulse_dashboard_feed.output }}"
+
+  # ---------------------------------------------------------------------------
+  # WORKFLOW OUTPUT
+  # ---------------------------------------------------------------------------
+
+  - name: return_curated_feed
+    type: workflow.output
+    with:
+      value:
+        status: "Autonomous Pulse Dashboard Curated Successfully"
+        curated_at: "{{ 'now' | date: '%Y-%m-%dT%H:%M:%SZ' }}"
+        thematic_focus: "{{ steps.environmental_subagent_reasoning.output }}"
+        is_mitigation_active: "{{ steps.trend_crowd_subagent_reasoning.output }}"
+        feed: "{{ steps.synthesize_pulse_dashboard_feed.output }}"

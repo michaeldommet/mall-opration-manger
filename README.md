@@ -112,21 +112,27 @@ We have built a premium customer-facing portal acting as a **Shopper Personal Co
 1. **🧭 Backtrack-Free Itinerary Planning**:
    * Shoppers input a time limit (e.g. *3 hours*) and activities (e.g. *buy shoes, eat sushi, get coffee*).
    * The assistant dynamically checks Elasticsearch indexes for active promotions and coordinates, groups activities by floor to eliminate backtracking, and plans a chronological schedule.
-2. **📱 Glassmorphic Phone Mockup Frame**:
-   * The cockpit is presented in a premium glassmorphic phone mockup centered on the page on desktops.
+2. **🖥️ Widescreen Touchscreen Kiosk Restructuring**:
+   * Restructured the widescreen shopper touch dashboard layout, optimizing it for public physical kiosk best practices.
+   * **Enlarged 3D Map Viewport (`flex: 1.8`):** Expanded the spatial map rendering card (`.kiosk-map-card`) to provide a much larger, visually prominent site plan.
+   * **Unified Touch Left Column (`.kiosk-info-panel`):** Consolidates the directory header, floor filters row, dynamic glassmorphic search input, and dynamic store listings inside a single self-contained scrolling list, reducing touch-point cognitive load.
+   * **Interactive Happenings Right Column (`.kiosk-happenings-panel`):** Houses a dedicated, premium advertising strip presenting flash sales, active mall events, and live musical concerts with quick-action click handlers.
+3. **📱 Glassmorphic Phone Mockup Frame**:
+   * The simulated mobile cockpit is presented in a premium glassmorphic phone mockup centered on the page on desktops.
    * Designed with absolute responsiveness—on physical mobile screens (`< 480px`), the bezel collapses and margins auto-adjust so the UI fills the screen natively.
-3. **🎟️ Interactive Highlighted Promotions Strip**:
-   * A horizontal scrollable deals carousel queries active store promotions.
+4. **🎟️ Interactive Highlighted Promotions Strip**:
+   * A horizontal scrollable deals carousel queries active store promotions on mobile views.
    * Clicking a deal card auto-fills and triggers a route-planning query directly to the co-pilot.
-4. **🗺️ Interactive Walk Itinerary Timeline**:
+5. **🗺️ Interactive Walk Itinerary Timeline**:
    * The Next.js frontend dynamically parses the agent's markdown table into a gorgeous vertical schedule timeline.
    * Renders color-coded floor badges (F-1, F-2, F-3), activity icons (👟, 🍣, ☕), step durations, notes, and walking transition nodes along a multi-color timeline line.
-5. **🎰 Geospatial Pathfinder & Prompt Offloading**:
+6. **🎰 Geospatial Pathfinder & Prompt Offloading**:
    * Coordinates and navigation heuristics are offloaded from prompt memory into a native Elasticsearch index (`mall-directory` with `geo_point` locations).
-   * Generates backtrack-free sequences using a native Python pathfinder tool (`calculate_optimal_path`), ensuring 100% mathema 6. **🎫 Elastic Workflow Coupons & Barcode Scanners**:
-    * Standardizes coupon activations using a secure **Elastic Agent Builder Workflow Tool** (`activate_customer_coupon`).
-    * Generates cryptographically unique single-use token codes (e.g., `SV-RETRO-4921`), indices them into `customer-coupons`, and logs campaign conversions directly to analytics.
-    * Intercepts tokens inside the Next.js chat message feed to render high-fidelity glassmorphic ticket cards complete with visual barcodes and a pulsing neon-red scanner laser animation directly inside the conversation bubble!
+   * Generates backtrack-free sequences using a native Python pathfinder tool (`calculate_optimal_path`), ensuring 100% mathematical precision.
+7. **🎫 Elastic Workflow Coupons & Barcode Scanners**:
+   * Standardizes coupon activations using a secure **Elastic Agent Builder Workflow Tool** (`activate_customer_coupon`).
+   * Generates cryptographically unique single-use token codes (e.g., `SV-RETRO-4921`), indices them into `customer-coupons`, and logs campaign conversions directly to analytics.
+   * Intercepts tokens inside the Next.js chat message feed to render high-fidelity glassmorphic ticket cards complete with visual barcodes and a pulsing neon-red scanner laser animation directly inside the conversation bubble!
 
 ---
 
@@ -209,6 +215,67 @@ graph TD
 
 ---
 
+## ⚡ Autonomous Pulse Dashboard & Multi-Subagent Curation Engine
+
+The **Autonomous Pulse Dashboard** is a real-time, closed-loop curation engine that curates the touchscreen kiosk's **Live Happenings & Deals** section dynamically based on environmental data, visitor congestion, and store distress indicators.
+
+### Orchestration System Flow
+
+```mermaid
+graph TD
+    classDef api fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef agent fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#f8fafc;
+    classDef flow fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+    classDef db fill:#022c22,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+
+    Trigger["Trigger: 5-Min Cron / Manual Refresh"]:::flow --> EAgent["Elastic Serverless Workflow Engine"]:::flow
+    
+    subgraph Subagents ["Multi-Subagent Reasoning Pipeline"]
+        EAgent --> S1["Environmental Subagent<br>(Weather & Time Check)"]:::agent
+        EAgent --> S2["Tenant Distress Subagent<br>(ES|QL Traffic Index Audit)"]:::agent
+        EAgent --> S3["Trend/Crowd Subagent<br>(IoT Occupancy Monitor)"]:::agent
+    end
+
+    subgraph Data ["Elasticsearch Telemetry & Indices"]
+        DB1[("iot-sensors-data Index")]:::db
+        DB2[("foot-traffic Index")]:::db
+        DB3[("promotions-history Index")]:::db
+        DB4[("pulse-dashboard-feed Index")]:::db
+    end
+
+    %% Queries
+    S1 -- "GET weather telemetry" --> WeatherAPI["Weather API"]
+    S2 -- "ES|QL Query" --> DB2
+    S2 -- "Scan campaigns" --> DB3
+    S3 -- "Scan occupancy" --> DB1
+
+    %% Synthesis & Indexing
+    S1 --> Synth["Dashboard Feed Synthesis<br>(Conflict Resolution & Merge)"]:::agent
+    S2 --> Synth
+    S3 --> Synth
+
+    Synth -- "Atomic Update (Feed JSON)" --> DB4
+    
+    %% Frontend Connection
+    KioskUI["Touch Cockpit UI<br>/customer Happenings Grid"]:::api -- "Dynamic fetch" --> BackendAPI["FastAPI GET /api/pulse"]:::api
+    BackendAPI -- "Fetch Latest Curation Document" --> DB4
+    BackendAPI -- "Safeguards: isinstance & Array.isArray" --> KioskUI
+```
+
+### Architectural Details
+
+1. **Subagent Orchestration (`ai.prompt`):**
+   * **Environmental Subagent:** Checks weather telemetry and local time clocks, shifting the feed's theme dynamically (e.g. promoting indoor movies and ramen on a rainy Sunday, or cold treats and AC zones on a hot weekday).
+   * **Tenant Distress Subagent:** Executes high-speed **ES|QL queries** (`elasticsearch.esql.query`) on traffic indices to detect struggling merchants and boosts their active promotions in the "Hot Deals" showcase.
+   * **Trend/Crowd Subagent:** Monitors occupancy indexes in the `iot-sensors-data` index. If areas like the Food Court are overcrowded (e.g. occupancy > 80%), it filters out Food Court deals and diverts shoppers to quieter sit-down cafes in the West Wing.
+2. **Conflict Resolution & Merge:**
+   * Coordinates the outputs from all three subagents to form a clean, conflict-free, and optimized JSON feed array containing exactly 4 happenings cards.
+3. **Double-Layer Serialization Safeguards:**
+   * **FastAPI Backend Type-Check (`isinstance(curated, list)`):** Validates that only valid list formats bypass indexing, falling back gracefully to static defaults if string anomalies (like workflow `"[object Object]"` strings) occur.
+   * **React Frontend Safeguard (`Array.isArray`):** Prevents page crashes during state transitions by checking array types before calling `.map()`.
+
+---
+
 ## ⚙️ Multi-Role Dynamic Request Routing
 
 The FastAPI backend exposes a single, unified SSE endpoint at `/api/chat`, supporting dual routing depending on the `role` parameter in the payload:
@@ -217,11 +284,12 @@ The FastAPI backend exposes a single, unified SSE endpoint at `/api/chat`, suppo
 
 ---
 
-## 🧬 Elastic Agent Builder Workflow YAML
+## 🧬 Elastic Agent Builder Workflow YAMLs
 
-The declarative YAML definition for the customer coupon activation workflow is available for direct import:
-* **Workflow File:** [activate_customer_coupon_workflow.yaml](file:///Users/I743656/my_projects/mall-opration-manger/activate_customer_coupon_workflow.yaml)
-* **Kibana API Integration:** Can be uploaded via the Kibana API or imported directly under **Kibana UI > Workflows** to link to the **Elastic Agent Builder**.
+The declarative YAML definitions for your Elastic Serverless Workflows are available for direct import:
+* **Coupon Activation Workflow:** [activate_customer_coupon_workflow.yaml](file:///Users/I743656/my_projects/mall-opration-manger/activate_customer_coupon_workflow.yaml) (Bridges AI shopper prompts with secure registers barcode issuances).
+* **Autonomous Pulse Dashboard Curation Workflow:** [autonomous_pulse_dashboard_workflow.yaml](file:///Users/I743656/my_projects/mall-opration-manger/autonomous_pulse_dashboard_workflow.yaml) (Orchestrates the Environmental, Tenant Distress, and Trend/Crowd multi-subagent curation pipeline).
+* **Kibana API Integration:** Can be uploaded via the Kibana API or imported directly under **Kibana UI > Workflows** to link directly to your **Elastic Agent Builder**.
 
 ---
 
