@@ -6,6 +6,130 @@ The backend is powered by the **Google Agent Development Kit (ADK) v2.0.0**, run
 
 ---
 
+## 🏆 Architecture Pillars — How This Project Uses Elastic + AI
+
+> [!IMPORTANT]
+> This project was purpose-built to showcase 5 core architectural patterns. Each section below maps a pattern to its concrete implementation in the codebase.
+
+---
+
+### 1️⃣ Contextual Retrieval Across Any Enterprise Data
+
+> *MCP tools exposing hybrid semantic, keyword, and vector search over any data — structured or unstructured — with hosted models for embeddings, reranking, and LLMs so your agent always gets the most relevant context.*
+
+**How we implement it:**
+
+The agent connects to Elasticsearch through the **Elastic MCP Server** ([`agent.py` → `_build_elastic_mcp_toolset()`](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/agent.py#L38-L89)), which auto-discovers all available search, index, and ES|QL capabilities via the Model Context Protocol. Both SSE (cloud-hosted) and Stdio (local subprocess) connection modes are supported.
+
+On the retrieval side, the [`/api/search` endpoint](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/main.py#L155-L375) performs a **3-layer hybrid search** across 7 enterprise indices:
+
+| Layer | Index | Technique | Details |
+|-------|-------|-----------|---------|
+| **Lexical BM25** | `mall-directory` | Multi-field keyword match | Boosted scoring across `store_name` (4.0×), `category` (2.5×), `keywords` (2.0×), `description` (1.0×) |
+| **Dense Vector KNN** | `promotions-history` | Semantic similarity search | Query embedded via local `sentence-transformers/all-MiniLM-L6-v2` model, matched against the `copy_vector` field |
+| **Score Fusion** | Both | Weighted merge | Promo scores scaled 15× and fused with lexical results, sorted descending for final ranking |
+
+The Gemini agent also receives the full MCP toolset at runtime, enabling **ad-hoc ES|QL queries**, **semantic searches**, and **index discovery** — all without any pre-defined retrieval pipelines.
+
+---
+
+### 2️⃣ Elastic Index as a Context Layer to Store Memory & Insights
+
+> *Write agent outputs, summaries, and enriched facts back into Elasticsearch so your agent builds on what it already knows — turning raw signals into retrievable intelligence over time.*
+
+**How we implement it:**
+
+This project treats Elasticsearch as a **living memory layer**, not just a data store. Agent-generated outputs are continuously written back into ES indices, creating a closed-loop intelligence pipeline:
+
+| Write-Back Point | What Gets Written | Target Index | Code Reference |
+|---|---|---|---|
+| **Coupon Activation** | AI-generated coupon tokens with `coupon_id`, `token`, `expires_at`, `is_redeemed` | `customer-coupons` | [tools.py L423](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/tools.py#L423) |
+| **Conversion Analytics** | Coupon activation events with timestamps and geo-coordinates under `entrance: "Coupon-Activation"` | `foot-traffic` | [workflow YAML L96-108](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/activate_customer_coupon_workflow.yaml#L96-L108) |
+| **AI-Curated Dashboard Feed** | Synthesized happenings/deals cards (output from 3 subagents + conflict resolution) | `pulse-dashboard-feed` | [workflow YAML L230-236](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/autonomous_pulse_dashboard_workflow.yaml#L230-L236) |
+
+The **read-back cycle** is just as important: the [`/api/pulse` endpoint](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/main.py#L534-L629) fetches the latest AI-curated feed from `pulse-dashboard-feed` and serves it to the kiosk frontend. The management dashboard queries `foot-traffic` to see coupon conversion spikes. Future reasoning cycles can query `customer-coupons` to avoid duplicate activations. **Every agent action enriches the data that future agent actions can retrieve.**
+
+---
+
+### 3️⃣ Custom Tools from Your Data Using ES|QL
+
+> *Define callable tools that wrap ES|QL queries and expose them over MCP, letting your agent search, filter, aggregate, and compute over your data as needed without custom code.*
+
+**How we implement it:**
+
+Three dedicated ES|QL tool functions are registered as Google ADK native tools alongside the MCP toolset:
+
+```python
+# tools.py — All three delegate to _execute_esql()
+run_esql_query(query: str)  # L483-491
+esql_query(query: str)      # L494-501
+esql(query: str)             # L504-511
+```
+
+The internal [`_execute_esql()`](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/tools.py#L449-L480) helper calls `es.esql.query()`, parses the columnar response format (`columns` + `values`), and returns results as a formatted **markdown table** that Gemini can reason over directly.
+
+These tools are registered on **both** agents ([`agent.py` L118](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/agent.py#L118), [L149](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/agent.py#L149)), enabling queries like:
+
+```sql
+FROM tenant-sales
+| WHERE sale_date >= "2026-04-01" AND sale_date < "2026-05-01"
+| STATS monthly_total = SUM(revenue) BY store_name
+| SORT monthly_total DESC
+| LIMIT 10
+```
+
+The system prompt ([`prompts.py` L52-58](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/prompts.py#L52-L58)) includes explicit ES|QL syntax guidance covering `DATE_TRUNC`, string quoting rules, and example patterns — enabling the LLM to **compose arbitrary analytical queries at runtime** without predefined templates.
+
+---
+
+### 4️⃣ Workflow Tools That Reach Across Systems
+
+> *Define tools that retrieve data and take action. Elastic Workflows can call APIs, write to systems of record, and orchestrate multi-step operations so your agent can take real actions.*
+
+**How we implement it:**
+
+The [`activate_customer_coupon` workflow](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/activate_customer_coupon_workflow.yaml) is a 5-step deterministic pipeline that bridges LLM reasoning with business-critical operations across multiple systems:
+
+```mermaid
+graph LR
+    classDef step fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+    A["1. verify_active_promotions<br/>(elasticsearch.search)"]:::step
+    B["2. generate_coupon_details<br/>(data.set + Liquid templates)"]:::step
+    C["3. index_coupon_record<br/>(elasticsearch.index → customer-coupons)"]:::step
+    D["4. log_conversion_metric<br/>(elasticsearch.index → foot-traffic)"]:::step
+    E["5. return_coupon_details<br/>(workflow.output → Agent)"]:::step
+    A --> B --> C --> D --> E
+```
+
+The Python tool [`activate_customer_coupon()`](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/tools.py#L278-L446) acts as the **gateway**: it triggers the workflow via the Kibana Workflows API (`POST /api/workflows/workflow/activate-customer-coupon/run`), polls for completion, and falls back to local simulation if the workflow isn't deployed. This creates a full chain:
+
+**LLM Agent → Python ADK Tool → Kibana Workflow API → Multi-Index ES Writes → Structured Response → Chat UI Barcode Render**
+
+The workflow crosses system boundaries in a single execution: it **reads** from `promotions-history` (verification), **writes** to `customer-coupons` (secure activation), **writes** to `foot-traffic` (conversion analytics), and **returns** structured JSON back to the agent for rendering.
+
+---
+
+### 5️⃣ Workflows That Call Subagents
+
+> *Orchestrate specialized subagents as steps within a larger workflow, each powered by its own dynamically loaded skills, so you can manage context and cost.*
+
+**How we implement it:**
+
+The [`autonomous_pulse_dashboard` workflow](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/autonomous_pulse_dashboard_workflow.yaml) orchestrates **3 specialized AI subagents** + 1 synthesis agent as `ai.prompt` steps within a single Elastic Serverless Workflow:
+
+| Subagent | Data Source | Skill | Output |
+|----------|------------|-------|--------|
+| 🌦️ **Environmental** | External HTTP weather API (Open-Meteo) + system clock | Weather-aware theming | Theme tag (`INDOOR_ENTERTAINMENT`, `LUNCH_AND_AC`, `STANDARD`), target categories, priority zones |
+| 📉 **Tenant Distress** | ES|QL on `foot-traffic` + search on `promotions-history` | Struggling-store detection | Boosted deals for low-traffic merchants |
+| 👥 **Trend/Crowd** | ES search on `iot-sensors-data` (occupancy sensors) | Overcrowding detection | Traffic diversion recommendations (e.g., avoid Food Court if >80% occupancy) |
+| 🧠 **Synthesizer** | Outputs from all 3 subagents above | Conflict resolution & card curation | Exactly 4 curated dashboard cards in structured JSON |
+
+Each subagent is a self-contained `ai.prompt` step with its own **system prompt**, **skill context**, and **data inputs** — isolating concerns and managing token cost. The Synthesizer resolves inter-subagent conflicts (e.g., Environmental recommends Food Court comfort food, but Crowd subagent detects overcrowding → Synthesizer diverts to quieter West Wing cafés).
+
+The entire pipeline runs **autonomously on a 5-minute scheduled trigger**, writes the curated feed to the `pulse-dashboard-feed` index, and the kiosk frontend picks it up via [`GET /api/pulse`](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/main.py#L534-L629) — creating a fully autonomous, self-updating dashboard with **zero human intervention**.
+
+---
+
 ## 🚀 Key Architectures
 
 - **Google ADK v2.0.0 Agent**: Core agent runner built using the official Google ADK, providing native support for tool execution, structured reasoning tracking, and real-time SSE stream outputs.
