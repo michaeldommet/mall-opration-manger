@@ -1,74 +1,110 @@
 # 🏬 Mall Operations Brain
 
-A multi-step reasoning AI Agent cockpit designed for brick-and-mortar retail operations managers. It acts as an autonomous operational co-pilot rather than a simple chatbot, joining and correlating data across **5 live Elasticsearch indexes** using **ES|QL (Elasticsearch Query Language)**, **Hybrid Vector Searches**, and the **Elastic MCP Server**.
-
-The backend is powered by the **Google Agent Development Kit (ADK) v2.0.0**, running **Gemini 2.5 Flash** as its core intelligence engine.
+An autonomous AI operations cockpit for brick-and-mortar retail — not a chatbot, but a **multi-step reasoning agent** that joins, correlates, and acts on live enterprise data across **7 Elasticsearch indices**. It serves two personas from a single platform: a **Manager Cockpit** for operational analytics and a **Shopper Kiosk** for customer-facing pathfinding, deal discovery, and coupon activation.
 
 ---
 
-## 🏆 Architecture Pillars — How This Project Uses Elastic + AI
+## 📐 Tech Stack
 
-> [!IMPORTANT]
-> This project was purpose-built to showcase 5 core architectural patterns. Each section below maps a pattern to its concrete implementation in the codebase.
-
----
-
-### 1️⃣ Contextual Retrieval Across Any Enterprise Data
-
-> *MCP tools exposing hybrid semantic, keyword, and vector search over any data — structured or unstructured — with hosted models for embeddings, reranking, and LLMs so your agent always gets the most relevant context.*
-
-**How we implement it:**
-
-The agent connects to Elasticsearch through the **Elastic MCP Server** ([`agent.py` → `_build_elastic_mcp_toolset()`](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/agent.py#L38-L89)), which auto-discovers all available search, index, and ES|QL capabilities via the Model Context Protocol. Both SSE (cloud-hosted) and Stdio (local subprocess) connection modes are supported.
-
-On the retrieval side, the [`/api/search` endpoint](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/main.py#L155-L375) performs a **3-layer hybrid search** across 7 enterprise indices:
-
-| Layer | Index | Technique | Details |
-|-------|-------|-----------|---------|
-| **Lexical BM25** | `mall-directory` | Multi-field keyword match | Boosted scoring across `store_name` (4.0×), `category` (2.5×), `keywords` (2.0×), `description` (1.0×) |
-| **Dense Vector KNN** | `promotions-history` | Semantic similarity search | Query embedded via local `sentence-transformers/all-MiniLM-L6-v2` model, matched against the `copy_vector` field |
-| **Score Fusion** | Both | Weighted merge | Promo scores scaled 15× and fused with lexical results, sorted descending for final ranking |
-
-The Gemini agent also receives the full MCP toolset at runtime, enabling **ad-hoc ES|QL queries**, **semantic searches**, and **index discovery** — all without any pre-defined retrieval pipelines.
+| Layer | Technology |
+|-------|-----------|
+| **Agent Framework** | Google ADK v2.0.0 (Gemini 2.5 Flash / Pro) |
+| **Tool Protocol** | Elastic MCP Server — auto-discovers search, ES\|QL, and index tools via Model Context Protocol |
+| **Query Engine** | ES\|QL native tools + Hybrid BM25 / KNN vector search with local `sentence-transformers` embeddings |
+| **Orchestration** | Elastic Serverless Workflows (YAML-defined, multi-step, multi-subagent) |
+| **Backend** | FastAPI with real-time SSE streaming of reasoning steps, tool calls, and results |
+| **Frontend** | Next.js glassmorphic dashboard — dark-mode manager terminal + widescreen kiosk + responsive mobile mockup |
+| **Data** | 7 Elasticsearch indices: `tenant-sales`, `foot-traffic`, `maintenance-tickets`, `events-calendar`, `promotions-history`, `mall-directory` (geo_point), `customer-coupons` |
 
 ---
 
-### 2️⃣ Elastic Index as a Context Layer to Store Memory & Insights
+## 🏗️ System Architecture
 
-> *Write agent outputs, summaries, and enriched facts back into Elasticsearch so your agent builds on what it already knows — turning raw signals into retrievable intelligence over time.*
+```mermaid
+graph TD
+    classDef ui fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef agent fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#f8fafc;
+    classDef flow fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+    classDef db fill:#022c22,stroke:#10b981,stroke-width:2px,color:#f8fafc;
 
-**How we implement it:**
+    subgraph Frontend ["Next.js Glassmorphic UI"]
+        Manager["Manager Cockpit /"]:::ui
+        Kiosk["Shopper Kiosk /customer"]:::ui
+    end
 
-This project treats Elasticsearch as a **living memory layer**, not just a data store. Agent-generated outputs are continuously written back into ES indices, creating a closed-loop intelligence pipeline:
+    subgraph Gateway ["FastAPI SSE Gateway"]
+        Router["Dual-Role Router /api/chat"]:::agent
+        SearchAPI["Hybrid Search /api/search"]:::agent
+        PulseAPI["Pulse Feed /api/pulse"]:::agent
+    end
 
-| Write-Back Point | What Gets Written | Target Index | Code Reference |
-|---|---|---|---|
-| **Coupon Activation** | AI-generated coupon tokens with `coupon_id`, `token`, `expires_at`, `is_redeemed` | `customer-coupons` | [tools.py L423](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/tools.py#L423) |
-| **Conversion Analytics** | Coupon activation events with timestamps and geo-coordinates under `entrance: "Coupon-Activation"` | `foot-traffic` | [workflow YAML L96-108](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/activate_customer_coupon_workflow.yaml#L96-L108) |
-| **AI-Curated Dashboard Feed** | Synthesized happenings/deals cards (output from 3 subagents + conflict resolution) | `pulse-dashboard-feed` | [workflow YAML L230-236](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/autonomous_pulse_dashboard_workflow.yaml#L230-L236) |
+    subgraph ADK ["Google ADK Agent Layer"]
+        MgrAgent["Manager Agent (ADK Runner)"]:::agent
+        ShopAgent["Shopper Co-Pilot Agent"]:::agent
+        MCP["Elastic MCP Toolset"]:::agent
+        ESQL["ES|QL Native Tools"]:::agent
+        Tools["Pathfinder + Coupon Tools"]:::agent
+    end
 
-The **read-back cycle** is just as important: the [`/api/pulse` endpoint](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/main.py#L534-L629) fetches the latest AI-curated feed from `pulse-dashboard-feed` and serves it to the kiosk frontend. The management dashboard queries `foot-traffic` to see coupon conversion spikes. Future reasoning cycles can query `customer-coupons` to avoid duplicate activations. **Every agent action enriches the data that future agent actions can retrieve.**
+    subgraph Workflows ["Elastic Serverless Workflows"]
+        CouponWF["activate_customer_coupon"]:::flow
+        PulseWF["autonomous_pulse_dashboard"]:::flow
+    end
 
----
+    subgraph ES ["Elasticsearch Indices"]
+        Sales[("tenant-sales")]:::db
+        Traffic[("foot-traffic")]:::db
+        Maint[("maintenance-tickets")]:::db
+        Events[("events-calendar")]:::db
+        Promos[("promotions-history")]:::db
+        Dir[("mall-directory")]:::db
+        Coupons[("customer-coupons")]:::db
+        IoT[("iot-sensors-data")]:::db
+        Pulse[("pulse-dashboard-feed")]:::db
+    end
 
-### 3️⃣ Custom Tools from Your Data Using ES|QL
-
-> *Define callable tools that wrap ES|QL queries and expose them over MCP, letting your agent search, filter, aggregate, and compute over your data as needed without custom code.*
-
-**How we implement it:**
-
-Three dedicated ES|QL tool functions are registered as Google ADK native tools alongside the MCP toolset:
-
-```python
-# tools.py — All three delegate to _execute_esql()
-run_esql_query(query: str)  # L483-491
-esql_query(query: str)      # L494-501
-esql(query: str)             # L504-511
+    Manager --> Router
+    Kiosk --> Router
+    Kiosk --> SearchAPI
+    Kiosk --> PulseAPI
+    Router --> MgrAgent
+    Router --> ShopAgent
+    MgrAgent --> MCP
+    MgrAgent --> ESQL
+    ShopAgent --> MCP
+    ShopAgent --> ESQL
+    ShopAgent --> Tools
+    Tools --> CouponWF
+    PulseWF --> IoT
+    PulseWF --> Traffic
+    PulseWF --> Promos
+    PulseWF --> Pulse
+    CouponWF --> Promos
+    CouponWF --> Coupons
+    CouponWF --> Traffic
+    MCP --> Sales
+    MCP --> Maint
+    MCP --> Events
+    SearchAPI --> Dir
+    SearchAPI --> Promos
+    PulseAPI --> Pulse
 ```
 
-The internal [`_execute_esql()`](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/tools.py#L449-L480) helper calls `es.esql.query()`, parses the columnar response format (`columns` + `values`), and returns results as a formatted **markdown table** that Gemini can reason over directly.
+---
 
-These tools are registered on **both** agents ([`agent.py` L118](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/agent.py#L118), [L149](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/agent.py#L149)), enabling queries like:
+## 🔍 Hybrid Retrieval Engine
+
+The agent retrieves context through **three complementary channels**, ensuring it always finds the most relevant data regardless of structure:
+
+### MCP Tool Auto-Discovery
+The agent connects to Elasticsearch via the **Elastic MCP Server**, which dynamically exposes search, index listing, and ES|QL query capabilities at runtime. No hardcoded retrieval pipelines — the agent discovers what tools are available and decides how to use them.
+
+Two connection modes are supported:
+- **SSE (Hosted):** Connects directly to the cloud-hosted MCP instance in Elastic Agent Builder — zero local dependencies.
+- **Stdio (Local):** Falls back to spawning `@elastic/mcp-server-elasticsearch` as a subprocess with `OTEL_SDK_DISABLED=true` to keep JSON-RPC clean.
+
+### ES|QL Analytical Queries
+Three native Python tools (`esql`, `esql_query`, `run_esql_query`) wrap the `es.esql.query()` API, parse columnar responses, and return formatted markdown tables the LLM can reason over directly. The system prompt includes ES|QL syntax guidance (e.g. `DATE_TRUNC`, quoting rules, pipe syntax), enabling Gemini to **compose arbitrary analytical queries at runtime**:
 
 ```sql
 FROM tenant-sales
@@ -78,17 +114,80 @@ FROM tenant-sales
 | LIMIT 10
 ```
 
-The system prompt ([`prompts.py` L52-58](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/prompts.py#L52-L58)) includes explicit ES|QL syntax guidance covering `DATE_TRUNC`, string quoting rules, and example patterns — enabling the LLM to **compose arbitrary analytical queries at runtime** without predefined templates.
+### Multi-Index Hybrid Search
+The `/api/search` endpoint fuses results from two indices in a single query:
+
+| Layer | Index | Technique | Details |
+|-------|-------|-----------|---------|
+| **Lexical BM25** | `mall-directory` | Multi-field keyword match | Boosted scoring: `store_name` (4.0×), `category` (2.5×), `keywords` (2.0×), `description` (1.0×) |
+| **Dense Vector KNN** | `promotions-history` | Semantic similarity | Query embedded via `sentence-transformers/all-MiniLM-L6-v2`, matched against `copy_vector` |
+| **Score Fusion** | Both | Weighted merge | Promo scores scaled 15× and fused with lexical hits, sorted descending |
 
 ---
 
-### 4️⃣ Workflow Tools That Reach Across Systems
+## 🔄 Elasticsearch as a Living Memory Layer
 
-> *Define tools that retrieve data and take action. Elastic Workflows can call APIs, write to systems of record, and orchestrate multi-step operations so your agent can take real actions.*
+Elasticsearch is not just a data source — it is the agent's **persistent memory**. Every meaningful action the agent takes writes enriched outputs back into ES indices, building retrievable intelligence over time:
 
-**How we implement it:**
+| Agent Action | What Gets Written | Target Index |
+|---|---|---|
+| Coupon activation | Structured token record (`coupon_id`, `token`, `expires_at`, `is_redeemed`) | `customer-coupons` |
+| Conversion tracking | Timestamped geo-coordinate event under `entrance: "Coupon-Activation"` | `foot-traffic` |
+| Dashboard curation | AI-synthesized happenings/deals cards (from 3 subagent outputs + conflict resolution) | `pulse-dashboard-feed` |
 
-The [`activate_customer_coupon` workflow](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/activate_customer_coupon_workflow.yaml) is a 5-step deterministic pipeline that bridges LLM reasoning with business-critical operations across multiple systems:
+The **read-back cycle** closes the loop: the `/api/pulse` endpoint fetches the latest AI-curated feed from `pulse-dashboard-feed` and serves it to the kiosk. The manager dashboard queries `foot-traffic` to visualize coupon conversion spikes. Future reasoning cycles query `customer-coupons` to avoid duplicate activations. Every agent action enriches the data that future agent actions can retrieve.
+
+---
+
+## ⚡ Autonomous Pulse Dashboard — Multi-Subagent Curation
+
+The kiosk's **Live Happenings & Deals** section is not static content — it is curated autonomously by a **scheduled Elastic Workflow** that orchestrates 3 specialized AI subagents every 5 minutes, each with its own data sources and reasoning skills:
+
+```mermaid
+graph TD
+    classDef api fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef agent fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#f8fafc;
+    classDef flow fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+    classDef db fill:#022c22,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+
+    Trigger["Scheduled Trigger: Every 5 Min"]:::flow --> Engine["Elastic Serverless Workflow Engine"]:::flow
+
+    subgraph Pipeline ["Multi-Subagent Reasoning Pipeline"]
+        Engine --> S1["🌦️ Environmental Subagent"]:::agent
+        Engine --> S2["📉 Tenant Distress Subagent"]:::agent
+        Engine --> S3["👥 Trend/Crowd Subagent"]:::agent
+    end
+
+    S1 -- "GET weather" --> Weather["Open-Meteo API"]
+    S2 -- "ES|QL query" --> FT[("foot-traffic")]:::db
+    S2 -- "Search deals" --> PR[("promotions-history")]:::db
+    S3 -- "Scan sensors" --> IoT[("iot-sensors-data")]:::db
+
+    S1 --> Synth["🧠 Synthesizer Subagent<br/>(Conflict Resolution)"]:::agent
+    S2 --> Synth
+    S3 --> Synth
+
+    Synth -- "Write curated feed" --> Feed[("pulse-dashboard-feed")]:::db
+    API["GET /api/pulse"]:::api -- "Fetch latest" --> Feed
+    Kiosk["Kiosk Happenings Grid"]:::api -- "Dynamic refresh" --> API
+```
+
+### How Each Subagent Works
+
+| Subagent | Data Source | Reasoning Skill | Example Output |
+|----------|-----------|-----------------|----------------|
+| **🌦️ Environmental** | External weather API + system clock | Weather-aware theming | Rainy Sunday → promote indoor movies & ramen; Hot weekday → cold treats & AC zones |
+| **📉 Tenant Distress** | ES\|QL on `foot-traffic` + `promotions-history` | Struggling-store detection | Low-traffic merchants get their active deals boosted to the "Hot Deals" showcase |
+| **👥 Trend/Crowd** | `iot-sensors-data` occupancy sensors | Overcrowding detection | Food Court at >80% occupancy → divert shoppers to quieter West Wing cafés |
+| **🧠 Synthesizer** | Combined outputs from all 3 above | Conflict resolution | Environmental wants Food Court comfort food, but Crowd says overcrowded → pick alternatives |
+
+Each subagent is a self-contained `ai.prompt` workflow step with its own system prompt, skill context, and data inputs — **isolating context windows and managing token cost**. The final synthesized feed (exactly 4 curated cards) is written atomically to `pulse-dashboard-feed`, and the kiosk picks it up on the next refresh — **zero human intervention**.
+
+---
+
+## 🎟️ Cross-System Workflow: Coupon Activation Engine
+
+The coupon system demonstrates how an Elastic Workflow can **read from one index, write to two others, call external APIs, and return structured data to the agent** — all in a single deterministic execution triggered by the LLM:
 
 ```mermaid
 graph LR
@@ -101,170 +200,7 @@ graph LR
     A --> B --> C --> D --> E
 ```
 
-The Python tool [`activate_customer_coupon()`](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/tools.py#L278-L446) acts as the **gateway**: it triggers the workflow via the Kibana Workflows API (`POST /api/workflows/workflow/activate-customer-coupon/run`), polls for completion, and falls back to local simulation if the workflow isn't deployed. This creates a full chain:
-
-**LLM Agent → Python ADK Tool → Kibana Workflow API → Multi-Index ES Writes → Structured Response → Chat UI Barcode Render**
-
-The workflow crosses system boundaries in a single execution: it **reads** from `promotions-history` (verification), **writes** to `customer-coupons` (secure activation), **writes** to `foot-traffic` (conversion analytics), and **returns** structured JSON back to the agent for rendering.
-
----
-
-### 5️⃣ Workflows That Call Subagents
-
-> *Orchestrate specialized subagents as steps within a larger workflow, each powered by its own dynamically loaded skills, so you can manage context and cost.*
-
-**How we implement it:**
-
-The [`autonomous_pulse_dashboard` workflow](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/adk_agent/autonomous_pulse_dashboard_workflow.yaml) orchestrates **3 specialized AI subagents** + 1 synthesis agent as `ai.prompt` steps within a single Elastic Serverless Workflow:
-
-| Subagent | Data Source | Skill | Output |
-|----------|------------|-------|--------|
-| 🌦️ **Environmental** | External HTTP weather API (Open-Meteo) + system clock | Weather-aware theming | Theme tag (`INDOOR_ENTERTAINMENT`, `LUNCH_AND_AC`, `STANDARD`), target categories, priority zones |
-| 📉 **Tenant Distress** | ES|QL on `foot-traffic` + search on `promotions-history` | Struggling-store detection | Boosted deals for low-traffic merchants |
-| 👥 **Trend/Crowd** | ES search on `iot-sensors-data` (occupancy sensors) | Overcrowding detection | Traffic diversion recommendations (e.g., avoid Food Court if >80% occupancy) |
-| 🧠 **Synthesizer** | Outputs from all 3 subagents above | Conflict resolution & card curation | Exactly 4 curated dashboard cards in structured JSON |
-
-Each subagent is a self-contained `ai.prompt` step with its own **system prompt**, **skill context**, and **data inputs** — isolating concerns and managing token cost. The Synthesizer resolves inter-subagent conflicts (e.g., Environmental recommends Food Court comfort food, but Crowd subagent detects overcrowding → Synthesizer diverts to quieter West Wing cafés).
-
-The entire pipeline runs **autonomously on a 5-minute scheduled trigger**, writes the curated feed to the `pulse-dashboard-feed` index, and the kiosk frontend picks it up via [`GET /api/pulse`](file:///Users/I743656/my_projects/mall-opration-manger/backend/app/main.py#L534-L629) — creating a fully autonomous, self-updating dashboard with **zero human intervention**.
-
----
-
-## 🚀 Key Architectures
-
-- **Google ADK v2.0.0 Agent**: Core agent runner built using the official Google ADK, providing native support for tool execution, structured reasoning tracking, and real-time SSE stream outputs.
-- **Elastic MCP Server (Agent Builder)**: Native integration with Model Context Protocol (MCP) toolsets. The agent auto-discovers capabilities like schema mappings, ES|QL query execution, and semantic vector searches directly from Elastic.
-- **FastAPI SSE Streaming Backend**: Translates intermediate reasoning steps, tool calls, tool results, and final reports into unified, real-time Server-Sent Events (SSE).
-- **Glassmorphic Next.js Dashboard**: A premium dark-mode operations terminal that displays live streaming reasoning steps, code blocks of executed ES|QL queries, and interactive results tables.
-
----
-
-## 🔌 Model Context Protocol (MCP) Server Modes
-
-The Mall Operations Brain automatically supports two connection modes to discover and execute Elasticsearch tools:
-
-### Mode 1: Hosted Elastic Agent Builder (SSE) — *Recommended*
-If you have created an agent and enabled the Elasticsearch MCP server in the **Elastic Agent Builder**, configure the hosted endpoint:
-* Connects via Server-Sent Events (SSE) directly to the cloud-hosted MCP instance.
-* No local node/npm dependencies are required for MCP server execution.
-* Secured automatically using your `ELASTICSEARCH_API_KEY`.
-
-### Mode 2: Local Subprocess (Stdio Stdio Connection) — *Fallback*
-If no `ELASTIC_MCP_URL` is provided, the backend falls back to spawning the official `@elastic/mcp-server-elasticsearch` npm package as a local stdio subprocess:
-* Automatically silences background OpenTelemetry logs (`OTEL_SDK_DISABLED=true`) so telemetry console logs do not pollute the JSON-RPC standard output stream.
-* Uses your local environment variables to connect directly to the target Elasticsearch cluster.
-
----
-
-## 🛠️ Step-by-Step Setup
-
-### 1. Credentials Configuration
-Create or edit `backend/.env` with your parameters:
-
-```bash
-# === 1. Elastic Cloud Serverless Credentials ===
-ELASTICSEARCH_URL=https://your-serverless-deployment.es.us-central1.gcp.elastic.cloud:443
-ELASTICSEARCH_API_KEY=your_elasticsearch_api_key
-
-# === 2. Elastic Agent Builder MCP URL (SSE Mode) ===
-# Set this to use the hosted MCP server inside the Elastic Agent Builder
-ELASTIC_MCP_URL=https://your-agent-builder-mcp-endpoint.elastic.cloud/mcp
-
-# === 3. Google Gemini Credentials (Vertex AI or AI Studio) ===
-# Option A: Gemini 2.5 Flash via Google AI Studio
-GOOGLE_API_KEY=your_gemini_ai_studio_api_key
-MODEL_NAME=gemini-2.5-flash
-
-# Option B: Gemini 2.5 Flash via GCP Vertex AI (Agent Platform API)
-# GOOGLE_GENAI_USE_VERTEXAI=true
-# GOOGLE_CLOUD_PROJECT=your_gcp_project_id
-# GOOGLE_CLOUD_LOCATION=us-central1
-```
-
-### 2. Install Dependencies
-Create the Python virtual environment (`.venv`), upgrade pip, install backend libraries (including `google-adk[mcp]`), and set up Next.js frontend assets:
-```bash
-make install
-```
-
-### 3. Seed Elasticsearch Indexes
-Generate 90 days of synthetic mall time-series, geospatial, and semantic vector data across 7 distinct indices:
-```bash
-make seed
-```
-*(Seeded indices: `tenant-sales`, `foot-traffic`, `maintenance-tickets`, `events-calendar`, `promotions-history`, `mall-directory` (geospatial coordinates), and `customer-coupons` (secure activations))*
-
-### 4. Boot Dev Servers
-Start the backend FastAPI agent server and Next.js development server:
-
-* **Terminal 1**: Start Backend
-  ```bash
-  make start-backend
-  ```
-* **Terminal 2**: Start Frontend
-  ```bash
-  make start-frontend
-  ```
-
-Open your browser at `http://localhost:3000` to access the Glassmorphic Cockpit.
-
----
-
-## 🧠 Core Diagnostic Flows to Demo
-
-1. **📈 Performance MoM Diagnosis**:
-   * *Trigger*: Click the **Sales Diagnosis MoM** chip or type: *"Which stores are underperforming this month vs last month?"*
-   * *Logic*: Agent compiles an ES|QL MoM sales query, detects underperforming tenants, checks foot-traffic grids, and evaluates promotions to suggest recoveries.
-2. **📣 Campaign Draft Generation**:
-   * *Trigger*: Click the **Campaign Composer** chip or type: *"Draft a weekend push for the underperforming east wing."*
-   * *Logic*: Agent isolates apparel/retail tenants in the east wing, semantically searches past high-performing marketing copies via dense vector search, and composes an automated push.
-3. **🔧 Facility Triage**:
-   * *Trigger*: Click the **Facility Triage** chip or type: *"Any facility issues that might be hurting the food court sales?"*
-   * *Logic*: Runs a vector search on active maintenance tickets, isolates a major food court ceiling leak, correlates ticket open dates with daily sales trends, and raises financial priority alerts.
-4. **⚡ Scheduled Audit Scan**:
-   * *Trigger*: Click the **Scheduled Audit Scan** button on the header.
-   * *Logic*: Agent evaluates current weekly visitor foot traffic against the rolling 4-week average, triggers warnings if down >20%, and discovers sliding door failures.
-
----
-
-## 🛍️ Customer AI Cockpit & Shopper Assistant (`/customer`)
-
-We have built a premium customer-facing portal acting as a **Shopper Personal Co-Pilot**. It brings the data-driven convenience of online shopping (personalized recommendations, semantic deal search, and spatial pathfinding) into the physical brick-and-mortar mall.
-
-### 🌐 Key Features
-
-1. **🧭 Backtrack-Free Itinerary Planning**:
-   * Shoppers input a time limit (e.g. *3 hours*) and activities (e.g. *buy shoes, eat sushi, get coffee*).
-   * The assistant dynamically checks Elasticsearch indexes for active promotions and coordinates, groups activities by floor to eliminate backtracking, and plans a chronological schedule.
-2. **🖥️ Widescreen Touchscreen Kiosk Restructuring**:
-   * Restructured the widescreen shopper touch dashboard layout, optimizing it for public physical kiosk best practices.
-   * **Enlarged 3D Map Viewport (`flex: 1.8`):** Expanded the spatial map rendering card (`.kiosk-map-card`) to provide a much larger, visually prominent site plan.
-   * **Unified Touch Left Column (`.kiosk-info-panel`):** Consolidates the directory header, floor filters row, dynamic glassmorphic search input, and dynamic store listings inside a single self-contained scrolling list, reducing touch-point cognitive load.
-   * **Interactive Happenings Right Column (`.kiosk-happenings-panel`):** Houses a dedicated, premium advertising strip presenting flash sales, active mall events, and live musical concerts with quick-action click handlers.
-3. **📱 Glassmorphic Phone Mockup Frame**:
-   * The simulated mobile cockpit is presented in a premium glassmorphic phone mockup centered on the page on desktops.
-   * Designed with absolute responsiveness—on physical mobile screens (`< 480px`), the bezel collapses and margins auto-adjust so the UI fills the screen natively.
-4. **🎟️ Interactive Highlighted Promotions Strip**:
-   * A horizontal scrollable deals carousel queries active store promotions on mobile views.
-   * Clicking a deal card auto-fills and triggers a route-planning query directly to the co-pilot.
-5. **🗺️ Interactive Walk Itinerary Timeline**:
-   * The Next.js frontend dynamically parses the agent's markdown table into a gorgeous vertical schedule timeline.
-   * Renders color-coded floor badges (F-1, F-2, F-3), activity icons (👟, 🍣, ☕), step durations, notes, and walking transition nodes along a multi-color timeline line.
-6. **🎰 Geospatial Pathfinder & Prompt Offloading**:
-   * Coordinates and navigation heuristics are offloaded from prompt memory into a native Elasticsearch index (`mall-directory` with `geo_point` locations).
-   * Generates backtrack-free sequences using a native Python pathfinder tool (`calculate_optimal_path`), ensuring 100% mathematical precision.
-7. **🎫 Elastic Workflow Coupons & Barcode Scanners**:
-   * Standardizes coupon activations using a secure **Elastic Agent Builder Workflow Tool** (`activate_customer_coupon`).
-   * Generates cryptographically unique single-use token codes (e.g., `SV-RETRO-4921`), indices them into `customer-coupons`, and logs campaign conversions directly to analytics.
-   * Intercepts tokens inside the Next.js chat message feed to render high-fidelity glassmorphic ticket cards complete with visual barcodes and a pulsing neon-red scanner laser animation directly inside the conversation bubble!
-
----
-
-## 🎟️ Elastic Workflow & Coupon Activation Architecture
-
-The **Elastic Workflow and Coupon Activation** feature is a high-fidelity systemic integration that bridges the gap between AI shopper co-pilot prompts and secure business logic. 
-
-### Systemic Flow Diagram
+**The full chain:** Shopper asks the co-pilot → ADK agent calls `activate_customer_coupon` tool → Python gateway triggers the hosted Elastic Workflow via the Kibana API → Workflow verifies campaign in `promotions-history`, writes token to `customer-coupons`, logs conversion to `foot-traffic` → Returns structured JSON → Frontend intercepts the token via regex and renders a glassmorphic barcode ticket card with a pulsing neon scanner laser.
 
 ```mermaid
 graph TD
@@ -273,156 +209,150 @@ graph TD
     classDef flow fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
     classDef db fill:#022c22,stroke:#10b981,stroke-width:2px,color:#f8fafc;
 
-    subgraph Client ["Client Interface (Next.js Kiosk & Mobile)"]
-        UI["Interactive Touch Cockpit /customer"]:::ui
-        Card["Directory Store Card: 'Claim Coupon'"]:::ui
-        ChatBubble["Chat Feed: '<CouponTicket>' Component"]:::ui
+    subgraph Client ["Next.js Kiosk & Mobile"]
+        UI["Touch Cockpit /customer"]:::ui
+        Card["Store Card: 'Claim Coupon'"]:::ui
+        Bubble["Chat Feed: CouponTicket Component"]:::ui
     end
 
-    subgraph Backend ["FastAPI SSE Agent Gateway"]
-        Agent["Shopper Personal Co-Pilot (ADK Agent)"]:::agent
-        Tool["ADK Tool: 'activate_customer_coupon'"]:::agent
+    subgraph Backend ["FastAPI SSE Gateway"]
+        Agent["Shopper Co-Pilot (ADK)"]:::agent
+        Tool["activate_customer_coupon Tool"]:::agent
     end
 
-    subgraph Elastic ["Elasticsearch & Kibana Suite"]
-        subgraph WorkflowEngine ["Elastic Serverless Workflows"]
-            Yaml["Hosted Workflow: 'activate_customer_coupon'"]:::flow
-            Verify["Step 1: verify_active_promotions"]:::flow
-            Gen["Step 2: generate_coupon_details (Liquid)"]:::flow
-            IndexStep["Step 3: index_coupon_record"]:::flow
-            LogStep["Step 4: log_conversion_metric"]:::flow
-        end
-
-        subgraph DB ["Elasticsearch Indices"]
-            IndexA[("customer-coupons Index")]:::db
-            IndexB[("foot-traffic Index")]:::db
-            IndexC[("promotions-history Index")]:::db
-        end
+    subgraph Elastic ["Elastic Serverless Workflows"]
+        WF["Hosted Workflow"]:::flow
+        V["verify_active_promotions"]:::flow
+        G["generate_coupon_details"]:::flow
+        I["index_coupon_record"]:::flow
+        L["log_conversion_metric"]:::flow
     end
 
-    %% Flow interactions
-    UI -- "1. Chat request: 'Activate SV coupon'" --> Agent
-    Card -- "1. Click: 'Claim Coupon' (submits chat prompt)" --> Agent
-    Agent -- "2. Invokes tool" --> Tool
-    
-    %% Tool execution logic
-    Tool -- "3a. POST Request (ApiKey auth)" --> Yaml
-    Yaml -- "Query campaigns" --> IndexC
-    Yaml -- "Write secure coupon" --> IndexA
-    Yaml -- "Log Coupon-Activation segment" --> IndexB
-    
-    Tool -- "3b. Local Fallback (Direct ES connection)" --> IndexA
-    
-    %% Return flow
-    Yaml -- "Return compiled token" --> Tool
-    Tool -- "4. Returns markdown + SV-RETRO-8492" --> Agent
-    Agent -- "5. Streams response" --> UI
-    UI -- "6. Regex extracts token" --> ChatBubble
-    ChatBubble -- "7. Renders red scanline + barcode" --> UI
+    subgraph Indices ["Elasticsearch"]
+        P[("promotions-history")]:::db
+        C[("customer-coupons")]:::db
+        F[("foot-traffic")]:::db
+    end
+
+    UI -- "Chat: 'Activate SV coupon'" --> Agent
+    Card -- "Click: Claim Coupon" --> Agent
+    Agent -- "Invoke tool" --> Tool
+    Tool -- "POST Kibana Workflow API" --> WF
+    WF --> V --> G --> I --> L
+    V -- "Query campaigns" --> P
+    I -- "Write token" --> C
+    L -- "Log conversion" --> F
+    WF -- "Return token JSON" --> Tool
+    Tool -- "Stream response" --> Agent
+    Agent -- "SSE stream" --> UI
+    UI -- "Regex extract token" --> Bubble
 ```
 
-### Architectural Breakdown
+---
 
-1. **Trigger Points**: 
-   * **Chat Input**: Shoppers type coupon activation requests (e.g. *"Claim the SneakerVault discount"*).
-   * **Direct Action**: Shoppers click the interactive **🎟️ Claim Coupon** button inside the selected store drawer under the directory sidebar. This auto-fills a standardized activation prompt and triggers the SSE conversation stream.
-2. **Shopper Agent Core & Tool Dispatch**:
-   * The **Shopper Personal Co-Pilot Agent** intercepts the request and routes it to the native tool `activate_customer_coupon(store_name, discount_desc, shopper_id)`.
-3. **Execution Engine (Dual-Path Orchestration)**:
-   * **Hosted Workflow API**: The tool attempts a standard `POST` request to the hosted **Elastic Agent Builder Workflow** run endpoint on the serverless cluster. If authenticated, the orchestrator verifies campaigns in `promotions-history`, evaluates dates, writes the verified code record to `customer-coupons`, and records foot-traffic analytics.
-   * **Local Database Simulation (Fallback)**: If the remote endpoint is unavailable, the tool uses standard Python `Elasticsearch` APIs to generate a cryptographically structured single-use coupon token (e.g. `SV-RETRO-8492`), writes the document to the local `customer-coupons` index, and logs a completion payload.
-4. **Foot-Traffic Analytics Conversion Logging**:
-   * Both pathways inject a conversion document with the timestamp and lat/lon coordinates to the `foot-traffic` index under `entrance: "Coupon-Activation"`. This enables active coupons to dynamically reflect as marketing conversion spikes on the manager-facing dashboard.
-5. **Regex Chat Feed Interception & Glassmorphism Animation**:
-   * The final generated token is streamed back to the Next.js frontend via FastAPI SSE chunks.
-   * The UI intercepts it directly inside the conversation message bubbles via matching regex, dynamically displaying a nested digital `<CouponTicket>` with visual barcodes, holographic text, and a glowing neon-red laser scanline pulsing smoothly on a loop.
+## 🛍️ Shopper AI Cockpit (`/customer`)
+
+A customer-facing portal that acts as a **Shopper Personal Co-Pilot**, bringing the data-driven convenience of online shopping into the physical mall:
+
+### Backtrack-Free Itinerary Planning
+Shoppers input a time limit and activities (e.g. *"3 hours: buy shoes, eat sushi, get coffee"*). The agent queries Elasticsearch for active promotions and store coordinates, then uses a native Python pathfinder tool (`calculate_optimal_path`) against the `mall-directory` geo_point index to generate a **mathematically optimal, backtrack-free route** grouped by floor. The frontend renders it as a gorgeous vertical timeline with color-coded floor badges, activity icons, step durations, and walking transitions.
+
+### Widescreen Touchscreen Kiosk Layout
+Optimized for physical public kiosks with three columns:
+- **Left Column** — Unified directory panel with floor filters, glassmorphic search input, and scrollable store listings
+- **Center Column** — Enlarged 3D map viewport (`flex: 1.8`) for spatial orientation
+- **Right Column** — Live happenings strip with flash sales, events, and concerts (powered by the Autonomous Pulse Dashboard above)
+
+### Responsive Mobile Mockup
+On desktop, the mobile view is presented in a premium glassmorphic phone bezel. On physical mobile screens (`< 480px`), the bezel collapses and the UI fills the screen natively. A horizontal scrollable deals carousel auto-fills route-planning queries on tap.
+
+### Interactive Coupon Ticket Cards
+When the agent activates a coupon, the token (e.g. `SV-RETRO-4921`) is intercepted directly inside the chat message feed via regex and rendered as a high-fidelity glassmorphic ticket with visual barcodes and a pulsing neon-red scanner laser animation — all inline within the conversation bubble.
 
 ---
 
-## ⚡ Autonomous Pulse Dashboard & Multi-Subagent Curation Engine
+## 🧠 Manager Diagnostic Flows
 
-The **Autonomous Pulse Dashboard** is a real-time, closed-loop curation engine that curates the touchscreen kiosk's **Live Happenings & Deals** section dynamically based on environmental data, visitor congestion, and store distress indicators.
+The manager cockpit (`/`) exposes multi-step analytical reasoning over all 7 indices:
 
-### Orchestration System Flow
+| Flow | Trigger | What the Agent Does |
+|------|---------|-------------------|
+| **📈 Sales Diagnosis MoM** | Chip or *"Which stores underperformed this month vs last?"* | Compiles an ES\|QL month-over-month revenue query, detects underperformers, cross-references foot-traffic grids, and evaluates promotion history to suggest recoveries |
+| **📣 Campaign Composer** | Chip or *"Draft a weekend push for the east wing"* | Isolates apparel/retail tenants in the east wing, runs a **dense vector search** on past high-performing marketing copy in `promotions-history`, and composes an automated campaign |
+| **🔧 Facility Triage** | Chip or *"Any facility issues hurting food court sales?"* | Runs a **semantic vector search** on `maintenance-tickets`, isolates a ceiling leak, correlates ticket dates with daily sales trends, and raises financial priority alerts |
+| **⚡ Scheduled Audit Scan** | Header button | Evaluates weekly foot traffic against the rolling 4-week average, triggers warnings if down >20%, discovers sliding door failures |
 
-```mermaid
-graph TD
-    classDef api fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
-    classDef agent fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#f8fafc;
-    classDef flow fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
-    classDef db fill:#022c22,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+Each flow demonstrates the agent **composing its own ES|QL queries, choosing between keyword and vector search, and chaining multiple tool calls** in a single reasoning trace — all streamed to the UI in real time via SSE.
 
-    Trigger["Trigger: 5-Min Cron / Manual Refresh"]:::flow --> EAgent["Elastic Serverless Workflow Engine"]:::flow
-    
-    subgraph Subagents ["Multi-Subagent Reasoning Pipeline"]
-        EAgent --> S1["Environmental Subagent<br>(Weather & Time Check)"]:::agent
-        EAgent --> S2["Tenant Distress Subagent<br>(ES|QL Traffic Index Audit)"]:::agent
-        EAgent --> S3["Trend/Crowd Subagent<br>(IoT Occupancy Monitor)"]:::agent
-    end
+---
 
-    subgraph Data ["Elasticsearch Telemetry & Indices"]
-        DB1[("iot-sensors-data Index")]:::db
-        DB2[("foot-traffic Index")]:::db
-        DB3[("promotions-history Index")]:::db
-        DB4[("pulse-dashboard-feed Index")]:::db
-    end
+## 🛠️ Setup
 
-    %% Queries
-    S1 -- "GET weather telemetry" --> WeatherAPI["Weather API"]
-    S2 -- "ES|QL Query" --> DB2
-    S2 -- "Scan campaigns" --> DB3
-    S3 -- "Scan occupancy" --> DB1
+### 1. Configure Credentials
+Create `backend/.env`:
 
-    %% Synthesis & Indexing
-    S1 --> Synth["Dashboard Feed Synthesis<br>(Conflict Resolution & Merge)"]:::agent
-    S2 --> Synth
-    S3 --> Synth
+```bash
+# Elastic Cloud Serverless
+ELASTICSEARCH_URL=https://your-deployment.es.us-central1.gcp.elastic.cloud:443
+ELASTICSEARCH_API_KEY=your_api_key
 
-    Synth -- "Atomic Update (Feed JSON)" --> DB4
-    
-    %% Frontend Connection
-    KioskUI["Touch Cockpit UI<br>/customer Happenings Grid"]:::api -- "Dynamic fetch" --> BackendAPI["FastAPI GET /api/pulse"]:::api
-    BackendAPI -- "Fetch Latest Curation Document" --> DB4
-    BackendAPI -- "Safeguards: isinstance & Array.isArray" --> KioskUI
+# Elastic Agent Builder MCP (SSE mode)
+ELASTIC_MCP_URL=https://your-mcp-endpoint.elastic.cloud/mcp
+
+# Google Gemini (AI Studio or Vertex AI)
+GOOGLE_API_KEY=your_gemini_key
+MODEL_NAME=gemini-2.5-flash
 ```
 
-### Architectural Details
+### 2. Install Dependencies
+```bash
+make install
+```
 
-1. **Subagent Orchestration (`ai.prompt`):**
-   * **Environmental Subagent:** Checks weather telemetry and local time clocks, shifting the feed's theme dynamically (e.g. promoting indoor movies and ramen on a rainy Sunday, or cold treats and AC zones on a hot weekday).
-   * **Tenant Distress Subagent:** Executes high-speed **ES|QL queries** (`elasticsearch.esql.query`) on traffic indices to detect struggling merchants and boosts their active promotions in the "Hot Deals" showcase.
-   * **Trend/Crowd Subagent:** Monitors occupancy indexes in the `iot-sensors-data` index. If areas like the Food Court are overcrowded (e.g. occupancy > 80%), it filters out Food Court deals and diverts shoppers to quieter sit-down cafes in the West Wing.
-2. **Conflict Resolution & Merge:**
-   * Coordinates the outputs from all three subagents to form a clean, conflict-free, and optimized JSON feed array containing exactly 4 happenings cards.
-3. **Double-Layer Serialization Safeguards:**
-   * **FastAPI Backend Type-Check (`isinstance(curated, list)`):** Validates that only valid list formats bypass indexing, falling back gracefully to static defaults if string anomalies (like workflow `"[object Object]"` strings) occur.
-   * **React Frontend Safeguard (`Array.isArray`):** Prevents page crashes during state transitions by checking array types before calling `.map()`.
+### 3. Seed Elasticsearch
+Generate 90 days of synthetic time-series, geospatial, and vector data across all indices:
+```bash
+make seed
+```
 
----
+### 4. Start Dev Servers
+```bash
+# Terminal 1 — Backend
+make start-backend
 
-## ⚙️ Multi-Role Dynamic Request Routing
+# Terminal 2 — Frontend
+make start-frontend
+```
 
-The FastAPI backend exposes a single, unified SSE endpoint at `/api/chat`, supporting dual routing depending on the `role` parameter in the payload:
-* `role: "manager"` routes requests to the ADK `manager_runner` for operational analytics (root page `/`).
-* `role: "customer"` routes requests to the ADK `customer_runner` linked to the custom `shopper_personal_copilot` agent (customer portal `/customer`).
-
----
-
-## 🧬 Elastic Agent Builder Workflow YAMLs
-
-The declarative YAML definitions for your Elastic Serverless Workflows are available for direct import:
-* **Coupon Activation Workflow:** [activate_customer_coupon_workflow.yaml](file:///Users/I743656/my_projects/mall-opration-manger/activate_customer_coupon_workflow.yaml) (Bridges AI shopper prompts with secure registers barcode issuances).
-* **Autonomous Pulse Dashboard Curation Workflow:** [autonomous_pulse_dashboard_workflow.yaml](file:///Users/I743656/my_projects/mall-opration-manger/autonomous_pulse_dashboard_workflow.yaml) (Orchestrates the Environmental, Tenant Distress, and Trend/Crowd multi-subagent curation pipeline).
-* **Kibana API Integration:** Can be uploaded via the Kibana API or imported directly under **Kibana UI > Workflows** to link directly to your **Elastic Agent Builder**.
+Open `http://localhost:3000` → Manager Cockpit, or `http://localhost:3000/customer` → Shopper Kiosk.
 
 ---
 
-## 🛠️ Enterprise Upgrades & Reliability Refinements
+## ⚙️ Request Routing
 
-To ensure production-grade stability, the cockpit features several custom architecture upgrades:
-1. **Bulletproof Native ES|QL Fallback**: Direct Python Elasticsearch connections (`esql`, `esql_query`, `run_esql_query`) run alongside auto-discovered MCP server tools. If cloud-hosted SSE handshake issues occur, the agent seamlessly invokes these native tools, generating clean markdown table formats.
-2. **Vertex AI Tool Registration Isolation**: Wrapped multiple alias functions in distinct, unique signatures to prevent Vertex AI duplicate function declaration errors.
-3. **Geospatial Offloading**: Replaced in-prompt mathematical heuristics with a dynamic `mall-directory` Elasticsearch index lookup coupled with an optimized Python pathfinder tool. This completely eliminates mathematical/hallucination errors for route sequences.
-4. **Resilient Chat Feed Token Interception**: Single-use customer coupons (e.g., `SV-RETRO-4921`) are securely indexed in the `customer-coupons` index and intercepted directly in the chat message thread using frontend regex to dynamically render beautiful glassmorphic neon laser scanning barcode ticket cards.
+The FastAPI backend exposes a unified SSE endpoint at `/api/chat` with dual routing:
+- `role: "manager"` → ADK `manager_runner` (operational analytics on `/`)
+- `role: "customer"` → ADK `customer_runner` linked to `shopper_personal_copilot` agent (`/customer`)
 
+---
 
+## 📦 Workflow YAML Definitions
+
+Importable directly into **Kibana UI → Workflows** or via the Kibana API:
+
+| Workflow | Purpose |
+|----------|---------|
+| `activate_customer_coupon_workflow.yaml` | Bridges AI shopper prompts with secure coupon issuance — verifies campaigns, writes tokens, logs conversions |
+| `autonomous_pulse_dashboard_workflow.yaml` | Orchestrates 3 AI subagents (Environmental, Tenant Distress, Trend/Crowd) on a 5-min schedule to curate the kiosk dashboard feed |
+
+---
+
+## 🔒 Reliability & Production Hardening
+
+| Feature | Detail |
+|---------|--------|
+| **Native ES\|QL Fallback** | If the cloud-hosted MCP handshake fails, the agent falls back to direct `es.esql.query()` Python tools transparently |
+| **Dual-Path Workflow Execution** | Coupon tool tries the hosted Kibana Workflow API first, falls back to local `elasticsearch-py` simulation |
+| **Geospatial Offloading** | Route math is offloaded from the LLM prompt to a native pathfinder tool + `mall-directory` geo_point index — eliminates hallucination |
+| **Double-Layer Serialization Guards** | Backend validates `isinstance(data, list)` before returning; frontend validates `Array.isArray()` before rendering — prevents `[object Object]` crashes |
+| **Tool Registration Isolation** | Multiple ES\|QL alias functions wrapped in distinct signatures to prevent Vertex AI duplicate declaration errors |
