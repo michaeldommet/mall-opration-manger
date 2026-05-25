@@ -15,6 +15,7 @@ An autonomous AI operations cockpit for brick-and-mortar retail — not a chatbo
 | **Backend** | FastAPI with real-time SSE streaming of reasoning steps, tool calls, and results |
 | **Frontend** | Next.js glassmorphic dashboard — dark-mode manager terminal + widescreen kiosk + responsive mobile mockup |
 | **Data** | 7 Elasticsearch indices: `tenant-sales`, `foot-traffic`, `maintenance-tickets`, `events-calendar`, `promotions-history`, `mall-directory` (geo_point), `customer-coupons` |
+| **Observability** | OpenTelemetry SDK → Elastic APM (OTLP/HTTP) with custom agent health metrics + business impact dashboards in Kibana |
 
 ---
 
@@ -344,6 +345,38 @@ Importable directly into **Kibana UI → Workflows** or via the Kibana API:
 |----------|---------|
 | `activate_customer_coupon_workflow.yaml` | Bridges AI shopper prompts with secure coupon issuance — verifies campaigns, writes tokens, logs conversions |
 | `autonomous_pulse_dashboard_workflow.yaml` | Orchestrates 3 AI subagents (Environmental, Tenant Distress, Trend/Crowd) on a 5-min schedule to curate the kiosk dashboard feed |
+
+---
+
+## 📊 Live Agent Observability & Business Dashboards
+
+The backend is instrumented with **OpenTelemetry** to trace every reasoning step of the Google ADK agent, measure tool execution latencies, and export custom metrics to **Elastic APM** via OTLP/HTTP. This provides a complete operational picture — not just of the mall, but of the AI system itself.
+
+### Instrumentation Architecture
+
+Every agent session flows through a **root trace span** (`agent.session`) that captures the full lifecycle: user message → reasoning phases → tool calls → final answer. Each tool invocation (ES|QL queries, coupon activations, pathfinder calculations) gets its own **child span** with execution status, latency, and business attributes.
+
+Custom metrics are registered for both **agent health** and **business impact**:
+
+| Metric | Type | What It Tracks |
+|--------|------|---------------|
+| `agent.tokens.consumed` | Counter | Estimated token burn per session, segmented by agent role |
+| `agent.reasoning.duration_ms` | Histogram | Time spent in LLM "thinking" phases vs tool execution |
+| `agent.tool.calls` | Counter | Tool invocations by name and success/error status |
+| `agent.esql.queries` | Counter | ES\|QL query throughput and error rate |
+| `coupon.activations` | Counter | Coupon tokens generated, split by workflow vs local fallback |
+| `pulse.workflow.runs` | Counter | Autonomous dashboard feed refreshes observed |
+
+### Kibana Dashboard
+
+An importable Kibana dashboard (`observability/agent_dashboard.ndjson`) is split into two hemispheres:
+
+- **🤖 Agent Health** — Token burn rate timeline, reasoning vs tool latency histogram, tool success donut chart, ES\|QL query volume area chart, active session counter
+- **🏬 Business Impact** — AI-driven coupon conversion counters, pulse workflow execution timeline, activation method pie chart, foot traffic heatmap (zone × hour), workflow API health gauge
+
+When no OTLP endpoint is configured, the system falls back to **console exporters** — traces and metrics are printed to stdout for local development with zero external dependencies.
+
+> See the full setup guide at [`observability/README.md`](file:///Users/I743656/my_projects/mall-opration-manger/observability/README.md).
 
 ---
 

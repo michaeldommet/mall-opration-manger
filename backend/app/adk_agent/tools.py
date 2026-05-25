@@ -2,6 +2,7 @@ import math
 import os
 import random
 import string
+import time as _time
 from datetime import datetime, timedelta
 import urllib.request
 import json
@@ -105,6 +106,15 @@ def calculate_optimal_path(stops: list, start_zone: str = "entrance-a") -> str:
         str: A formatted markdown table containing the schedule, transit times,
              notes, and a summary.
     """
+    try:
+        from backend.app.telemetry import tracer as _tracer, obs_metrics as _obs
+        _span = _tracer.start_span(
+            "pathfinder.calculate",
+            attributes={"pathfinder.stop_count": len(stops), "pathfinder.start_zone": start_zone},
+        )
+    except Exception:
+        _span = None
+
     try:
         # 1. Resolve start_zone from Elasticsearch
         start_coord = _fetch_coordinates(start_zone)
@@ -270,8 +280,14 @@ def calculate_optimal_path(stops: list, start_zone: str = "entrance-a") -> str:
         markdown += f"- **Backtracking Status:** **Optimal (0 backtracks)**\n"
         markdown += f"- **Calculated Speed:** 60 meters/min pace\n"
         
+        if _span:
+            _span.end()
         return markdown
     except Exception as e:
+        if _span:
+            _span.set_attribute("error", True)
+            _span.record_exception(e)
+            _span.end()
         return f"Error executing itinerary calculations: {str(e)}"
 
 
@@ -290,6 +306,19 @@ def activate_customer_coupon(store_name: str, discount_desc: str, shopper_id: st
         str: A message with the coupon activation outcome and unique token.
     """
     try:
+        from backend.app.telemetry import tracer as _tracer, obs_metrics as _obs
+    except Exception:
+        _tracer = None
+        _obs = None
+
+    _span_ctx = _tracer.start_as_current_span(
+        "coupon.activation",
+        attributes={"coupon.store_name": store_name, "coupon.shopper_id": shopper_id},
+    ) if _tracer else __import__("contextlib").nullcontext()
+
+    with _span_ctx as coupon_span:
+      activation_start = _time.monotonic()
+      try:
         # Check if we can trigger the actual Kibana/Elastic Serverless Workflow API
         es_url = os.getenv("ELASTERSEARCH_URL", os.getenv("ELASTICSEARCH_URL", ""))
         es_api_key = os.getenv("ELASTICSEARCH_API_KEY", "")
@@ -441,43 +470,85 @@ def activate_customer_coupon(store_name: str, discount_desc: str, shopper_id: st
             f"**INSTRUCTIONS:** Render this coupon in the Next.js visual timeline with a scannable digital barcode "
             f"for checkout. Show the token `{token}` prominently."
         )
+
+        # ── OTel: Record coupon activation metrics ──────────────────────
+        activation_method = "workflow" if workflow_triggered else "local"
+        if coupon_span:
+            coupon_span.set_attribute("coupon.method", activation_method)
+            coupon_span.set_attribute("coupon.token", token)
+            coupon_span.set_attribute("coupon.duration_ms", (_time.monotonic() - activation_start) * 1000)
+        if _obs:
+            _obs.coupon_activations.add(1, {"store_name": store_name, "method": activation_method})
+
         return result
-    except Exception as e:
+      except Exception as e:
+        if coupon_span:
+            coupon_span.set_attribute("error", True)
+            coupon_span.record_exception(e)
         return f"Error executing coupon activation workflow: {str(e)}"
 
 
 def _execute_esql(query: str) -> str:
     """Internal helper to run ES|QL queries natively."""
+    try:
+        from backend.app.telemetry import tracer as _tracer, obs_metrics as _obs
+    except Exception:
+        _tracer = None
+        _obs = None
+
     es = _get_es_client()
     if not es:
+        if _obs:
+            _obs.esql_queries.add(1, {"status": "error"})
         return "Error: Elasticsearch client could not be initialized. Verify connection configurations."
-    try:
-        res = es.esql.query(query=query)
-        columns = res.get("columns", [])
-        values = res.get("values", [])
-        
-        if not columns:
-            return "Query executed successfully, but returned no columns."
+
+    _span_ctx = _tracer.start_as_current_span(
+        "esql.query",
+        attributes={"esql.query": query[:500]},
+    ) if _tracer else __import__("contextlib").nullcontext()
+
+    with _span_ctx as esql_span:
+        try:
+            res = es.esql.query(query=query)
+            columns = res.get("columns", [])
+            values = res.get("values", [])
             
-        # Format as Markdown table
-        col_names = [col["name"] for col in columns]
-        markdown = "| " + " | ".join(col_names) + " |\n"
-        markdown += "| " + " | ".join(["---"] * len(col_names)) + " |\n"
-        
-        for val_row in values:
-            val_strs = []
-            for v in val_row:
-                if v is None:
-                    val_strs.append("-")
-                elif isinstance(v, dict):
-                    val_strs.append(str(v))
-                else:
-                    val_strs.append(str(v))
-            markdown += "| " + " | ".join(val_strs) + " |\n"
+            if not columns:
+                if _obs:
+                    _obs.esql_queries.add(1, {"status": "success"})
+                return "Query executed successfully, but returned no columns."
+                
+            # Format as Markdown table
+            col_names = [col["name"] for col in columns]
+            markdown = "| " + " | ".join(col_names) + " |\n"
+            markdown += "| " + " | ".join(["---"] * len(col_names)) + " |\n"
             
-        return markdown
-    except Exception as e:
-        return f"Error executing ES|QL query: {str(e)}"
+            for val_row in values:
+                val_strs = []
+                for v in val_row:
+                    if v is None:
+                        val_strs.append("-")
+                    elif isinstance(v, dict):
+                        val_strs.append(str(v))
+                    else:
+                        val_strs.append(str(v))
+                markdown += "| " + " | ".join(val_strs) + " |\n"
+
+            # ── OTel: Record success metrics ─────────────────────────────
+            if esql_span:
+                esql_span.set_attribute("esql.row_count", len(values))
+                esql_span.set_attribute("esql.column_count", len(col_names))
+            if _obs:
+                _obs.esql_queries.add(1, {"status": "success"})
+
+            return markdown
+        except Exception as e:
+            if esql_span:
+                esql_span.set_attribute("error", True)
+                esql_span.record_exception(e)
+            if _obs:
+                _obs.esql_queries.add(1, {"status": "error"})
+            return f"Error executing ES|QL query: {str(e)}"
 
 
 def run_esql_query(query: str) -> str:

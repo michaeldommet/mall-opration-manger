@@ -9,6 +9,7 @@ import os
 import json
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -26,6 +27,10 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types as genai_types
 
 logger = logging.getLogger(__name__)
+
+# ─── OpenTelemetry Instrumentation ───────────────────────────────────────────
+from backend.app.telemetry import init_telemetry, instrument_app, tracer
+init_telemetry()
 
 # ─── Vertex AI Configuration ────────────────────────────────────────────────
 # The ADK uses google-genai under the hood. For Vertex AI API keys (starting
@@ -66,6 +71,9 @@ app = FastAPI(
     description="Backend API serving Google ADK agent with Elastic MCP over SSE streams.",
     version="2.0.0",
 )
+
+# Auto-instrument FastAPI with OTel (HTTP-level request/response tracing)
+instrument_app(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -160,6 +168,11 @@ def hybrid_search(q: str = "", floor: str = None):
     2. Dense vector semantic search on 'promotions-history' index using query embeddings.
     3. Merges matching stores, boosts stores with matching deals, and returns unified results.
     """
+    from backend.app.telemetry import tracer as _tracer, obs_metrics as _obs
+    with _tracer.start_as_current_span("search.hybrid", attributes={"search.query": q or "", "search.floor_filter": floor or "all"}):
+        if _obs:
+            _obs.search_queries.add(1, {"floor": floor or "all"})
+
     from backend.app.adk_agent.tools import _get_es_client
     es = _get_es_client()
     
@@ -387,6 +400,8 @@ async def _stream_adk_events(user_message: str, role: str = "manager"):
       - {"type": "tool_result", "tool": "...", "output": "..."}
       - {"type": "final_answer", "content": "..."}
     """
+    from backend.app.telemetry import tracer as _tracer, obs_metrics as _obs
+
     # Route execution based on role
     if role == "customer":
         app_name = "shopper_personal_copilot"
@@ -414,88 +429,157 @@ async def _stream_adk_events(user_message: str, role: str = "manager"):
     )
 
     final_text = ""
+    session_start = time.monotonic()
+    tool_call_count = 0
+    reasoning_step_count = 0
+    total_text_chars = 0
 
-    try:
-        async for event in active_runner.run_async(
-            user_id=user_id,
-            session_id=session.id,
-            new_message=user_content,
-        ):
-            # Each event is an ADK Event object. We need to normalize it to
-            # the SSE format that the Next.js frontend expects.
-            
-            author = getattr(event, "author", "")
-            
-            # Check for function calls (tool invocations)
-            if event.content and event.content.parts:
-                for part in event.content.parts:
-                    # Function call — agent is requesting a tool
-                    if hasattr(part, "function_call") and part.function_call:
-                        fc = part.function_call
-                        tool_name = fc.name or "unknown_tool"
-                        tool_args = dict(fc.args) if fc.args else {}
-                        
-                        yield json.dumps({
-                            "type": "tool_call",
-                            "tool": tool_name,
-                            "arguments": tool_args,
-                        })
-                    
-                    # Function response — result from tool execution
-                    elif hasattr(part, "function_response") and part.function_response:
-                        fr = part.function_response
-                        tool_name = fr.name or "unknown_tool"
-                        # The response can be a dict or a string
-                        output = fr.response
-                        if isinstance(output, dict):
-                            output_str = json.dumps(output, indent=2)
-                        else:
-                            output_str = str(output)
-                        
-                        yield json.dumps({
-                            "type": "tool_result",
-                            "tool": tool_name,
-                            "output": output_str,
-                        })
-                    
-                    # Text content — either reasoning or final answer
-                    elif hasattr(part, "text") and part.text:
-                        text = part.text.strip()
-                        if not text:
-                            continue
-                        
-                        if author == agent_name:
-                            # This is the agent's text output
-                            # If this is a reasoning step (internal monologue before final),
-                            # we emit it as reasoning. The last text becomes the final answer.
-                            final_text = text
+    # ── OTel: Root span for the entire agent session ─────────────────────
+    with _tracer.start_as_current_span(
+        "agent.session",
+        attributes={
+            "agent.role": role,
+            "agent.name": agent_name,
+            "agent.session_id": session_id,
+            "agent.user_message": user_message[:500],
+        },
+    ) as session_span:
+        if _obs:
+            _obs.session_count.add(1, {"role": role, "agent_name": agent_name})
+
+        try:
+            # Track timing for reasoning vs tool phases
+            last_event_time = time.monotonic()
+            pending_tool_name = None
+            tool_start_time = None
+
+            async for event in active_runner.run_async(
+                user_id=user_id,
+                session_id=session.id,
+                new_message=user_content,
+            ):
+                # Each event is an ADK Event object. We need to normalize it to
+                # the SSE format that the Next.js frontend expects.
+                
+                now = time.monotonic()
+                author = getattr(event, "author", "")
+                
+                # Check for function calls (tool invocations)
+                if event.content and event.content.parts:
+                    for part in event.content.parts:
+                        # Function call — agent is requesting a tool
+                        if hasattr(part, "function_call") and part.function_call:
+                            fc = part.function_call
+                            tool_name = fc.name or "unknown_tool"
+                            tool_args = dict(fc.args) if fc.args else {}
+
+                            # Record reasoning duration (time since last event)
+                            reasoning_ms = (now - last_event_time) * 1000
+                            if _obs and reasoning_ms > 10:  # skip trivial gaps
+                                _obs.reasoning_duration.record(reasoning_ms, {"role": role, "agent_name": agent_name})
+
+                            # Start tracking tool execution time
+                            pending_tool_name = tool_name
+                            tool_start_time = now
+                            tool_call_count += 1
+                            
                             yield json.dumps({
-                                "type": "reasoning",
-                                "content": text[:200] + ("..." if len(text) > 200 else ""),
+                                "type": "tool_call",
+                                "tool": tool_name,
+                                "arguments": tool_args,
                             })
+                            last_event_time = time.monotonic()
+                        
+                        # Function response — result from tool execution
+                        elif hasattr(part, "function_response") and part.function_response:
+                            fr = part.function_response
+                            tool_name = fr.name or "unknown_tool"
+                            # The response can be a dict or a string
+                            output = fr.response
+                            if isinstance(output, dict):
+                                output_str = json.dumps(output, indent=2)
+                            else:
+                                output_str = str(output)
 
-        # After the stream is complete, emit the final answer
-        if final_text:
-            yield json.dumps({
-                "type": "final_answer",
-                "content": final_text,
-            })
+                            # ── OTel: Record tool execution duration & status ────
+                            tool_status = "success"
+                            if output_str.startswith("Error"):
+                                tool_status = "error"
 
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"[ADK ERROR] Agent execution failed: {error_msg}")
-        
-        # Check if it's an API key / permission issue
-        if any(term in error_msg.lower() for term in ["permission", "403", "blocked", "api_key"]):
+                            if _obs:
+                                # Tool duration
+                                if tool_start_time:
+                                    tool_ms = (now - tool_start_time) * 1000
+                                    _obs.tool_duration.record(tool_ms, {"tool_name": pending_tool_name or tool_name, "status": tool_status})
+                                # Tool call counter
+                                _obs.tool_calls.add(1, {"tool_name": tool_name, "status": tool_status})
+
+                            pending_tool_name = None
+                            tool_start_time = None
+                            
+                            yield json.dumps({
+                                "type": "tool_result",
+                                "tool": tool_name,
+                                "output": output_str,
+                            })
+                            last_event_time = time.monotonic()
+                        
+                        # Text content — either reasoning or final answer
+                        elif hasattr(part, "text") and part.text:
+                            text = part.text.strip()
+                            if not text:
+                                continue
+                            
+                            if author == agent_name:
+                                # This is the agent's text output
+                                # If this is a reasoning step (internal monologue before final),
+                                # we emit it as reasoning. The last text becomes the final answer.
+                                final_text = text
+                                reasoning_step_count += 1
+                                total_text_chars += len(text)
+                                yield json.dumps({
+                                    "type": "reasoning",
+                                    "content": text[:200] + ("..." if len(text) > 200 else ""),
+                                })
+                                last_event_time = time.monotonic()
+
+            # After the stream is complete, emit the final answer
+            if final_text:
+                total_text_chars += len(final_text)
+                yield json.dumps({
+                    "type": "final_answer",
+                    "content": final_text,
+                })
+
+            # ── OTel: Finalize session span with summary attributes ──────
+            session_duration_ms = (time.monotonic() - session_start) * 1000
+            estimated_tokens = total_text_chars // 4  # rough token estimate
+            session_span.set_attribute("agent.tool_call_count", tool_call_count)
+            session_span.set_attribute("agent.reasoning_steps", reasoning_step_count)
+            session_span.set_attribute("agent.estimated_tokens", estimated_tokens)
+            session_span.set_attribute("agent.session_duration_ms", session_duration_ms)
+
+            if _obs:
+                _obs.tokens_consumed.add(estimated_tokens, {"role": role, "agent_name": agent_name})
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"[ADK ERROR] Agent execution failed: {error_msg}")
+            session_span.set_attribute("error", True)
+            session_span.set_attribute("error.message", error_msg[:500])
+            session_span.record_exception(e)
+            
+            # Check if it's an API key / permission issue
+            if any(term in error_msg.lower() for term in ["permission", "403", "blocked", "api_key"]):
+                yield json.dumps({
+                    "type": "reasoning",
+                    "content": f"⚠️ API credential issue detected: {error_msg[:150]}. Please verify your GOOGLE_API_KEY and Vertex AI configuration.",
+                })
+            
             yield json.dumps({
-                "type": "reasoning",
-                "content": f"⚠️ API credential issue detected: {error_msg[:150]}. Please verify your GOOGLE_API_KEY and Vertex AI configuration.",
+                "type": "error",
+                "content": f"Agent execution error: {error_msg}",
             })
-        
-        yield json.dumps({
-            "type": "error",
-            "content": f"Agent execution error: {error_msg}",
-        })
 
 
 @app.post("/api/chat")
@@ -536,6 +620,8 @@ def get_pulse_feed():
     """
     Fetches the latest curated dynamic Happenings & Deals feed from the 'pulse-dashboard-feed' index.
     """
+    from backend.app.telemetry import tracer as _tracer, obs_metrics as _obs
+
     es_url = os.getenv("ELASTICSEARCH_URL", "")
     es_api_key = os.getenv("ELASTICSEARCH_API_KEY", "")
     
@@ -607,24 +693,31 @@ def get_pulse_feed():
             "sort": [{"timestamp": {"order": "desc"}}],
             "size": 1
         }
-        res = es.search(index="pulse-dashboard-feed", body=query)
-        hits = res.get("hits", {}).get("hits", [])
-        
-        if hits:
-            source = hits[0]["_source"]
-            curated = source.get("curated_feed", [])
-            # If curated is stored as a JSON string, load it
-            if isinstance(curated, str):
-                import json
-                try:
-                    curated = json.loads(curated)
-                except Exception:
-                    pass
-            if isinstance(curated, list) and len(curated) > 0:
-                return {"feed": curated, "source": "live_elasticsearch"}
+        with _tracer.start_as_current_span("pulse.feed.fetch", attributes={"pulse.index": "pulse-dashboard-feed"}) as pulse_span:
+            res = es.search(index="pulse-dashboard-feed", body=query)
+            hits = res.get("hits", {}).get("hits", [])
+            
+            if hits:
+                source = hits[0]["_source"]
+                curated = source.get("curated_feed", [])
+                # If curated is stored as a JSON string, load it
+                if isinstance(curated, str):
+                    import json
+                    try:
+                        curated = json.loads(curated)
+                    except Exception:
+                        pass
+                if isinstance(curated, list) and len(curated) > 0:
+                    pulse_span.set_attribute("pulse.source", "live_elasticsearch")
+                    pulse_span.set_attribute("pulse.card_count", len(curated))
+                    if _obs:
+                        _obs.pulse_workflow_runs.add(1, {"source": "live_elasticsearch"})
+                    return {"feed": curated, "source": "live_elasticsearch"}
+
+            pulse_span.set_attribute("pulse.source", "fallback")
                 
     except Exception as e:
-        print(f"[API] Error loading curated pulse feed from Elasticsearch: {str(e)}")
+        logger.error(f"[API] Error loading curated pulse feed from Elasticsearch: {str(e)}")
         
     return {"feed": fallback_feed, "source": "fallback"}
 
