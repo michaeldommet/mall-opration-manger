@@ -291,7 +291,7 @@ def activate_customer_coupon(store_name: str, discount_desc: str, shopper_id: st
     """
     try:
         # Check if we can trigger the actual Kibana/Elastic Serverless Workflow API
-        es_url = os.getenv("ELASTICSEARCH_URL", "")
+        es_url = os.getenv("ELASTERSEARCH_URL", os.getenv("ELASTICSEARCH_URL", ""))
         es_api_key = os.getenv("ELASTICSEARCH_API_KEY", "")
         
         workflow_triggered = False

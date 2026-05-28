@@ -123,7 +123,7 @@ export default function CustomerCockpit() {
   useEffect(() => {
     const fetchPulseFeed = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/pulse");
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pulse`);
         if (response.ok) {
           const data = await response.json();
           if (data && data.feed && data.feed.length > 0) {
@@ -140,7 +140,7 @@ export default function CustomerCockpit() {
   useEffect(() => {
     const fetchStores = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/stores");
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/stores`);
         if (response.ok) {
           const data = await response.json();
           if (data && data.stores && data.stores.length > 0) {
@@ -166,7 +166,7 @@ export default function CustomerCockpit() {
       setIsSearching(true);
       try {
         const floorParam = selectedFloorFilter !== "all" ? selectedFloorFilter : "";
-        const url = `http://localhost:8000/api/search?q=${encodeURIComponent(q)}&floor=${floorParam}`;
+        const url = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/search?q=${encodeURIComponent(q)}&floor=${floorParam}`;
         const response = await fetch(url);
         if (response.ok) {
           const data = await response.json();
@@ -497,7 +497,7 @@ export default function CustomerCockpit() {
     setIsReasoningOpen(true);
     
     try {
-      const response = await fetch("http://localhost:8000/api/chat", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

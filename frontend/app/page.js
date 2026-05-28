@@ -152,7 +152,7 @@ export default function Home() {
     
     try {
       // Establish Connection to FastAPI Server
-      const backendUrl = "http://localhost:8000/api/chat";
+      const backendUrl = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/chat`;
       const response = await fetch(backendUrl, {
         method: "POST",
         headers: {
@@ -239,7 +239,7 @@ export default function Home() {
       setMessages((prev) => 
         prev.map((msg) => 
           msg.id === agentMsgId 
-            ? { ...msg, content: `## ⚠️ Connection Failure\n\nCould not connect to the backend agent server at \`http://localhost:8000\`. Please ensure the FastAPI server is running (\`make start-backend\`).\n\n*(Error detail: ${error.message})*`, isStreaming: false }
+            ? { ...msg, content: `## ⚠️ Connection Failure\n\nCould not connect to the backend agent server at \`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}\`. Please ensure the FastAPI server is running (\`make start-backend\`).\n\n*(Error detail: ${error.message})*`, isStreaming: false }
             : msg
         )
       );

@@ -1,0 +1,11 @@
+# Custom .gcloudignore for Frontend source builds
+# Exclude heavy local assets and git history
+node_modules/
+.next/
+.git/
+.gitignore
+.gcloudignore
+
+# Do NOT exclude env production files (needed to bake backend API URL into static build)
+!/frontend/.env.production
+!.env.production

@@ -51,7 +51,7 @@ steps:
     with:
       prompt: |
         You are the Mall Environmental Subagent. Analyze the current external environment:
-        - Weather Forecast Data: {{ steps.get_external_weather.output }}
+        - Weather Forecast Data: {{ steps.get_external_weather.output | json }}
         - Current Local Time: {{ 'now' | date: '%H:%M %p' }}
         - Current Day of Week: {{ 'now' | date: '%A' }}
         - Weather Override (If any): {{ inputs.override_weather }}
@@ -99,10 +99,10 @@ steps:
         You are the Tenant Distress Subagent. Your task is to identify stores that are currently struggling for foot traffic and dynamically boost their active campaigns to the "Hot Deals" showcase.
 
         Here is the recent zone-level foot traffic averages:
-        {{ steps.query_tenant_foot_traffic.output }}
+        {{ steps.query_tenant_foot_traffic.output | json }}
 
         Here are all active promotions currently configured in the mall:
-        {{ steps.query_active_deals.output }}
+        {{ steps.query_active_deals.output | json }}
 
         Identify 1-2 participating tenants situated in low-traffic zones that have active promotions. Boost their offers so that the mall can direct shoppers to these stores.
         
@@ -147,7 +147,7 @@ steps:
         You are the Trend/Crowd Subagent. Your role is to monitor IoT foot traffic occupancy telemetry and prevent dangerous overcrowding.
 
         Here is the last 30 minutes of IoT sensor data:
-        {{ steps.query_iot_sensors.output }}
+        {{ steps.query_iot_sensors.output | json }}
 
         Determine if key areas (specifically the Food Court on Floor 1) are overcrowded (e.g. occupancy index > 80%).
         If a critical zone is overcrowded:

@@ -1,0 +1,9 @@
+{
+  "pending_operation": {
+    "operation_name": "projects/942081424214/locations/us-central1/reasoningEngines/4578976097256865792/operations/7461705807860596736",
+    "project": "elastic-496520",
+    "location": "us-central1",
+    "deployment_target": "agent_runtime",
+    "started_at": "2026-05-28T17:01:25.587816+00:00"
+  }
+}
