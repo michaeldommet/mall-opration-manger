@@ -28,6 +28,7 @@ REGION="$DEFAULT_REGION"
 DEPLOY_AGENT=true
 DEPLOY_APP=true
 DRY_RUN=false
+CLEANUP=false
 
 show_help() {
     cat << EOF
@@ -38,6 +39,7 @@ Options:
   -r, --region REGION   GCP Region (default: $DEFAULT_REGION)
   --agent-only          Deploy only the Vertex AI ADK Agent
   --app-only            Deploy only the Backend and Frontend Cloud Run services
+  -c, --cleanup         Delete all deployed GCP resources (Cloud Run & Secrets)
   -d, --dry-run         Print commands that would be executed without running them
   -h, --help            Show this help message and exit
 EOF
@@ -62,6 +64,10 @@ while [[ $# -gt 0 ]]; do
         --app-only)
             DEPLOY_AGENT=false
             DEPLOY_APP=true
+            shift
+            ;;
+        -c|--cleanup)
+            CLEANUP=true
             shift
             ;;
         -d|--dry-run)
@@ -95,6 +101,63 @@ log_warn() {
 log_error() {
     echo -e "${RED}${BOLD}[ERROR]${NC} $1"
 }
+
+# ------------------------------------------------------------------------------
+# Cleanup Execution
+# ------------------------------------------------------------------------------
+if [ "$CLEANUP" = true ]; then
+    echo -e "${RED}${BOLD}"
+    echo "=========================================================================="
+    echo "          🚨 GCP RESOURCE CLEANUP ENGINE (DESTRUCTIVE MODE) 🚨            "
+    echo "=========================================================================="
+    echo -e "${NC}"
+    echo -e "This will delete the following resources in project ${BOLD}$PROJECT_ID${NC}:"
+    echo "  - Cloud Run Service: mall-brain-frontend"
+    echo "  - Cloud Run Service: mall-brain-backend"
+    echo "  - GCP Secret: ELASTICSEARCH_API_KEY"
+    echo "  - GCP Secret: GOOGLE_API_KEY"
+    echo ""
+    
+    # In dry-run or non-interactive environments, skip input
+    if [ "$DRY_RUN" = false ]; then
+        read -p "Are you sure you want to proceed with this deletion? (y/N) " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Cleanup aborted by user."
+            exit 0
+        fi
+    fi
+    
+    log_info "Initiating resource deletion..."
+    
+    if [ "$DRY_RUN" = true ]; then
+        echo "[DRY-RUN] gcloud run services delete mall-brain-frontend --region $REGION --project $PROJECT_ID --quiet"
+        echo "[DRY-RUN] gcloud run services delete mall-brain-backend --region $REGION --project $PROJECT_ID --quiet"
+        echo "[DRY-RUN] gcloud secrets delete ELASTICSEARCH_API_KEY --project $PROJECT_ID --quiet"
+        echo "[DRY-RUN] gcloud secrets delete GOOGLE_API_KEY --project $PROJECT_ID --quiet"
+    else
+        log_info "Deleting Cloud Run frontend service..."
+        gcloud run services delete mall-brain-frontend --region "$REGION" --project "$PROJECT_ID" --quiet || log_warn "Frontend service not found or already deleted."
+        
+        log_info "Deleting Cloud Run backend service..."
+        gcloud run services delete mall-brain-backend --region "$REGION" --project "$PROJECT_ID" --quiet || log_warn "Backend service not found or already deleted."
+        
+        log_info "Deleting ELASTICSEARCH_API_KEY secret..."
+        gcloud secrets delete ELASTICSEARCH_API_KEY --project "$PROJECT_ID" --quiet || log_warn "Secret ELASTICSEARCH_API_KEY not found."
+        
+        log_info "Deleting GOOGLE_API_KEY secret..."
+        gcloud secrets delete GOOGLE_API_KEY --project "$PROJECT_ID" --quiet || log_warn "Secret GOOGLE_API_KEY not found."
+    fi
+    
+    log_success "All targeted GCP resources cleaned up successfully!"
+    echo ""
+    echo -e "${CYAN}${BOLD}Note on Vertex AI Agent Cleanup:${NC}"
+    echo "To delete your ADK Agent from the Vertex AI Agent Platform Console, please visit:"
+    echo "  https://console.cloud.google.com/vertex-ai/agents?project=$PROJECT_ID"
+    echo "Select your agent ('mall-opration-manger') and click 'Delete'."
+    echo ""
+    exit 0
+fi
 
 # ------------------------------------------------------------------------------
 # Banner

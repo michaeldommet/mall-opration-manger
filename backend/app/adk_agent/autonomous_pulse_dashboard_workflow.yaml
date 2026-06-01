@@ -40,7 +40,7 @@ steps:
   - name: get_external_weather
     type: http
     with:
-      url: "https://api.open-meteo.com/v1/forecast?latitude=24.7136&longitude=46.6753&current=temperature_2m,weather_code"
+      url: "https://api.open-meteo.com/v1/forecast?latitude=52.5200&longitude=13.4050&current=temperature_2m,weather_code"
       method: "GET"
       headers:
         Accept: "application/json"
@@ -178,13 +178,13 @@ steps:
         You are the Lead Dashboard Synthesizer. You have received curation inputs from three specialized subagents:
         
         1. Environmental Subagent (Weather/Time focus):
-        {{ steps.environmental_subagent_reasoning.output }}
+        {{ steps.environmental_subagent_reasoning.output | json }}
         
         2. Tenant Distress Subagent (low-traffic boost):
-        {{ steps.tenant_distress_subagent_reasoning.output }}
+        {{ steps.tenant_distress_subagent_reasoning.output | json }}
         
         3. Trend/Crowd Subagent (overcrowding mitigation):
-        {{ steps.trend_crowd_subagent_reasoning.output }}
+        {{ steps.trend_crowd_subagent_reasoning.output | json }}
 
         Create a final, conflict-free, and premium curation list of exactly 4 "Happenings" for the widescreen kiosk dashboard.
         
@@ -233,7 +233,7 @@ steps:
       index: "pulse-dashboard-feed"
       document:
         timestamp: "{{ 'now' | date: '%Y-%m-%dT%H:%M:%SZ' }}"
-        curated_feed: "{{ steps.synthesize_pulse_dashboard_feed.output }}"
+        curated_feed: "{{ steps.synthesize_pulse_dashboard_feed.output | json }}"
 
   # ---------------------------------------------------------------------------
   # WORKFLOW OUTPUT
@@ -245,6 +245,6 @@ steps:
       value:
         status: "Autonomous Pulse Dashboard Curated Successfully"
         curated_at: "{{ 'now' | date: '%Y-%m-%dT%H:%M:%SZ' }}"
-        thematic_focus: "{{ steps.environmental_subagent_reasoning.output }}"
-        is_mitigation_active: "{{ steps.trend_crowd_subagent_reasoning.output }}"
-        feed: "{{ steps.synthesize_pulse_dashboard_feed.output }}"
+        thematic_focus: "{{ steps.environmental_subagent_reasoning.output | json }}"
+        is_mitigation_active: "{{ steps.trend_crowd_subagent_reasoning.output | json }}"
+        feed: "{{ steps.synthesize_pulse_dashboard_feed.output | json }}"
