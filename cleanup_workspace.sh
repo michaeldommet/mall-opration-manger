@@ -90,9 +90,7 @@ if [ "$DEEP_CLEAN" = true ]; then
     log_info "Removing Next.js compilation cache (.next) in frontend..."
     rm -rf frontend/.next 2>/dev/null || true
     
-    log_info "Removing local virtual environment (.venv)..."
-    rm -rf .venv 2>/dev/null || true
-    
+   
     log_info "Removing frontend dependencies (node_modules)..."
     rm -rf frontend/node_modules 2>/dev/null || true
     
