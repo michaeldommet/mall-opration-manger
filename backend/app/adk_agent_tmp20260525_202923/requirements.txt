@@ -1,7 +1,0 @@
-google-adk[mcp]>=2.0.0
-google-genai>=1.0.0
-elasticsearch>=8.15.0
-python-dotenv>=1.0.0
-PyYAML
-google-cloud-aiplatform[agent_engines]
-google-adk==2.0.0
