@@ -20,6 +20,8 @@ An autonomous AI operations cockpit for brick-and-mortar retail — not a chatbo
 
 ## 🏗️ System Architecture
 
+![System Architecture Diagram](frontend/public/system_architecture.png)
+
 ```mermaid
 graph TD
     classDef ui fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
@@ -325,6 +327,44 @@ make start-frontend
 ```
 
 Open `http://localhost:3000` → Manager Cockpit, or `http://localhost:3000/customer` → Shopper Kiosk.
+
+---
+
+## 🚀 GCP Cloud Deployment
+
+The application features a unified script to deploy both the ADK Agent (Vertex AI Agent Platform) and the application services (FastAPI Backend + Next.js Frontend) to Google Cloud Run:
+
+```bash
+# Deploy all services and agent runtime
+./deploy.sh
+
+# Deploy only the backend and frontend application on Cloud Run
+./deploy.sh --app-only
+
+# Deploy only the standalone ADK agent runtime
+./deploy.sh --agent-only
+
+# Run a dry-run check of the deployment sequence
+./deploy.sh --dry-run
+```
+
+### Environmental Cleanups
+To erase and tear down all deployed Cloud Run services and custom secrets in GCP Secret Manager:
+
+```bash
+# Safely clean up all cloud-deployed services and configuration secrets
+./deploy.sh --cleanup
+```
+
+To clean up local python bytecode folders, temporary scripts, and dependency caches:
+
+```bash
+# Standard local cleanup (removes cache directories, temp files)
+./cleanup_workspace.sh
+
+# Deep local cleanup (removes .venv, node_modules, and compiled .next builds)
+./cleanup_workspace.sh --deep
+```
 
 ---
 
