@@ -332,7 +332,51 @@ Open `http://localhost:3000` → Manager Cockpit, or `http://localhost:3000/cust
 
 ## 🚀 GCP Cloud Deployment
 
-The application features a unified script to deploy both the ADK Agent (Vertex AI Agent Platform) and the application services (FastAPI Backend + Next.js Frontend) to Google Cloud Run:
+### 🤖 ADK Agent — Deployed via `agents-cli`
+
+> **The ADK agent is deployed to Google Cloud using [`agents-cli`](https://github.com/google/agents-cli)** — Google's official CLI for packaging, deploying, and managing ADK agents on **Vertex AI Agent Engine** (formerly Agent Platform).
+
+The project includes an [`agents-cli-manifest.yaml`](agents-cli-manifest.yaml) that defines all deployment parameters:
+
+```yaml
+name: "mall-opration-manger"
+agent_directory: "adk_agent"
+region: "us-central1"
+deployment_target: "agent_runtime"
+```
+
+**Install `agents-cli` (one-time):**
+```bash
+uv tool install google-agents-cli
+```
+
+**Deploy the ADK agent to Vertex AI Agent Engine:**
+```bash
+agents-cli deploy
+```
+
+This single command packages the `adk_agent/` directory, pushes the agent runtime to **Google Cloud Run** (us-central1), and registers it with **Vertex AI Agent Engine** — no manual Docker builds or Cloud Run config required.
+
+**Other useful `agents-cli` commands:**
+```bash
+# Interactive local testing before deploying
+agents-cli playground
+
+# Run evaluation test suites
+agents-cli eval run
+
+# Check code quality
+agents-cli lint
+
+# Set up GCP infrastructure (Terraform)
+agents-cli infra single-project
+```
+
+---
+
+### 🖥️ Application Services — Deployed via `deploy.sh`
+
+The FastAPI backend and Next.js frontend are deployed to **Google Cloud Run** using the unified deployment script:
 
 ```bash
 # Deploy all services and agent runtime
