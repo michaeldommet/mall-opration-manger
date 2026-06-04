@@ -41,7 +41,7 @@ if google_key.startswith("AQ."):
 
 # ─── ADK Components ─────────────────────────────────────────────────────────
 # Import the agent after environment is configured
-from backend.app.adk_agent.agent import root_agent, customer_agent
+from app.adk_agent.agent import root_agent, customer_agent
 
 session_service = InMemorySessionService()
 
@@ -95,7 +95,7 @@ def health_check():
 @app.get("/api/stores")
 def get_stores():
     """Fetches all stores from the Elasticsearch mall-directory index with local mock fallback."""
-    from backend.app.adk_agent.tools import _get_es_client
+    from app.adk_agent.tools import _get_es_client
     es = _get_es_client()
     
     mock_stores = [
@@ -160,7 +160,7 @@ def hybrid_search(q: str = "", floor: str = None):
     2. Dense vector semantic search on 'promotions-history' index using query embeddings.
     3. Merges matching stores, boosts stores with matching deals, and returns unified results.
     """
-    from backend.app.adk_agent.tools import _get_es_client
+    from app.adk_agent.tools import _get_es_client
     es = _get_es_client()
     
     q_clean = q.strip()
@@ -632,4 +632,4 @@ def get_pulse_feed():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     host = os.getenv("HOST", "0.0.0.0")
-    uvicorn.run("backend.app.main:app", host=host, port=port, reload=True)
+    uvicorn.run("app.main:app", host=host, port=port, reload=True)

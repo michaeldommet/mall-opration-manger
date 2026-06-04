@@ -13,7 +13,7 @@ import asyncio
 
 # Load .env from backend directory
 from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "backend", ".env"))
 
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool.mcp_toolset import (
@@ -90,14 +90,6 @@ def _build_elastic_mcp_toolset() -> MCPToolset:
             )
         )
 
-
-# ─── Shared MCP Toolset ──────────────────────────────────────────────────────
-# Create a single shared MCP toolset instance at module load time.
-# This prevents spawning multiple local stdio subprocesses or establishing multiple
-# parallel SSE connections, avoiding lock contentions or handshake failures.
-shared_elastic_mcp = _build_elastic_mcp_toolset()
-
-
 def create_agent() -> LlmAgent:
     """
     Create and return the Mall Operations Brain ADK agent.
@@ -112,12 +104,15 @@ def create_agent() -> LlmAgent:
     logger.info(f"[AGENT] Creating Mall Operations Brain agent with model: {model_name}")
 
     from .tools import esql, esql_query, run_esql_query
+    
+    # Initialize the toolset here so it picks up runtime env vars from Vertex AI
+    elastic_mcp = _build_elastic_mcp_toolset()
 
     agent = LlmAgent(
         name="mall_operations_brain",
         model=model_name,
         instruction=AGENT_SYSTEM_PROMPT,
-        tools=[shared_elastic_mcp, esql, esql_query, run_esql_query],
+        tools=[elastic_mcp, esql, esql_query, run_esql_query],
     )
 
     return agent
@@ -138,13 +133,15 @@ def create_customer_agent() -> LlmAgent:
         esql_query,
         run_esql_query,
     )
+    
+    elastic_mcp = _build_elastic_mcp_toolset()
 
     agent = LlmAgent(
         name="shopper_personal_copilot",
         model=model_name,
         instruction=SHOPPER_SYSTEM_PROMPT,
         tools=[
-            shared_elastic_mcp,
+            elastic_mcp,
             calculate_optimal_path,
             activate_customer_coupon,
             esql,
@@ -154,9 +151,3 @@ def create_customer_agent() -> LlmAgent:
     )
 
     return agent
-
-
-# Pre-build the agents for import by main.py
-root_agent = create_agent()
-customer_agent = create_customer_agent()
-

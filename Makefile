@@ -27,7 +27,7 @@ seed:
 
 start-backend:
 	@echo "Starting backend uvicorn server using virtual environment..."
-	PYTHONPATH=. $(VENV_BIN)/uvicorn backend.app.main:app --reload --port 8000
+	PYTHONPATH=./backend $(VENV_BIN)/uvicorn app.main:app --reload --port 8000
 
 start-frontend:
 	@echo "Starting Next.js developer server..."
