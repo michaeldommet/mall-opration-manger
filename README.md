@@ -20,7 +20,6 @@ An autonomous AI operations cockpit for brick-and-mortar retail — not a chatbo
 
 ## 🏗️ System Architecture
 
-![System Architecture Diagram](frontend/public/system_architecture.png)
 
 ```mermaid
 graph TD
