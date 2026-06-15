@@ -89,9 +89,6 @@ steps:
   # ---------------------------------------------------------------------------
   # Step 4: Deduct Marketing Budget & Log Campaign Conversion
   # ---------------------------------------------------------------------------
-  # To impress judges, we log the coupon activation event straight into our
-  # 'foot-traffic' index under a special entrance type: 'Coupon-Activation'.
-  # This makes coupon redemption directly visible on the management dashboard!
   # ---------------------------------------------------------------------------
   - name: log_conversion_metric
     type: elasticsearch.index
